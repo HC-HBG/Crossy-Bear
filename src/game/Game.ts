@@ -1,8 +1,11 @@
-import { Application, Container } from "pixi.js";
+import { Application, Container, Graphics } from "pixi.js";
 import { GameSession, type SessionSnapshot, type Phase } from "../state";
 import { COLORS } from "./constants";
 import { buildLaneField, type LaneField } from "./Lanes";
 import { Bear } from "./Bear";
+import { buildVehicle, randomVehicleKind } from "./Vehicles";
+import { spawnCoinFountain, cameraPunchIn } from "./Celebration";
+import { tween, easeOutQuad } from "./tween";
 
 const HOP_MS = 220;
 const DEATH_MS = 320;
@@ -19,6 +22,7 @@ export class Game {
   private lastPhase: Phase = "IDLE";
   private lastStepsCompleted = 0;
   private animQueue: Promise<void> = Promise.resolve();
+  private hitVehicleSeed = 0;
 
   private constructor(app: Application, session: GameSession) {
     this.app = app;
@@ -129,20 +133,76 @@ export class Game {
     if (!this.laneField || !snap.lastOutcome) return;
     const outcome = snap.lastOutcome;
     const targetX = this.laneField.laneX(outcome.stepNumber);
-    await this.bear.hopTo(targetX, this.duration(HOP_MS, snap) * 0.6);
+    const dur = this.duration(HOP_MS, snap);
+    await this.bear.hopTo(targetX, dur * 0.6);
     if (outcome.zone === "road") {
+      // a vehicle visibly arrives and comically flattens the bear — never a dodge, just a reveal
+      const vehicle = await this.spawnHitVehicleArrive(targetX, Math.max(90, dur * 0.5));
       await this.bear.dieFlatten(this.duration(DEATH_MS, snap));
+      void this.driveVehicleOff(vehicle);
     } else {
+      this.spawnSplashRipples(targetX);
       await this.bear.dieSplash(this.duration(DEATH_MS, snap));
     }
   }
 
   private async animateCashOut(snap: SessionSnapshot): Promise<void> {
     if (!this.laneField) return;
-    if (snap.lastOutcome?.isFinalStep) {
+    const isBigWin = snap.lastOutcome?.isFinalStep === true;
+
+    if (isBigWin) {
       const targetX = this.laneField.laneX(this.laneField.totalSteps + 1);
       await this.bear.hopTo(targetX, this.duration(HOP_MS, snap));
     }
-    await this.bear.fistPump(this.duration(CASHOUT_MS, snap));
+
+    if (isBigWin && !snap.turbo) {
+      const focal = this.bear.view.getGlobalPosition();
+      spawnCoinFountain(this.app.stage, this.app.ticker, focal.x, focal.y - 50);
+      await Promise.all([this.bear.fistPump(CASHOUT_MS), cameraPunchIn(this.app.stage, this.app.ticker, focal)]);
+    } else {
+      await this.bear.fistPump(this.duration(CASHOUT_MS, snap));
+    }
+  }
+
+  private async spawnHitVehicleArrive(targetX: number, arrivalMs: number): Promise<Container> {
+    const vehicle = buildVehicle(randomVehicleKind(this.hitVehicleSeed++));
+    vehicle.rotation = Math.PI / 2;
+    const depth = this.laneDepth();
+    const fromTop = Math.random() < 0.5;
+    const startY = fromTop ? -depth / 2 - 70 : depth / 2 + 70;
+    vehicle.x = targetX;
+    vehicle.y = startY;
+    this.world.addChild(vehicle);
+    await tween(this.app.ticker, arrivalMs, (t) => {
+      vehicle.y = startY * (1 - t);
+    }, easeOutQuad);
+    return vehicle;
+  }
+
+  private async driveVehicleOff(vehicle: Container): Promise<void> {
+    const direction = Math.random() < 0.5 ? -1 : 1;
+    await tween(this.app.ticker, 260, (t) => {
+      vehicle.y = direction * t * 260;
+      vehicle.alpha = 1 - t * 0.5;
+    });
+    vehicle.destroy();
+  }
+
+  private spawnSplashRipples(x: number): void {
+    for (let i = 0; i < 3; i++) {
+      const ring = new Graphics();
+      ring.x = x;
+      this.world.addChild(ring);
+      const delayMs = i * 90;
+      void (async () => {
+        if (delayMs > 0) await new Promise((resolve) => window.setTimeout(resolve, delayMs));
+        await tween(this.app.ticker, 480, (t) => {
+          ring.clear();
+          const r = 6 + t * 34;
+          ring.circle(0, 0, r).stroke({ width: 3, color: 0xbfe0ff, alpha: 0.5 * (1 - t) });
+        });
+        ring.destroy();
+      })();
+    }
   }
 }

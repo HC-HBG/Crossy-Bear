@@ -8,6 +8,7 @@ const BEAR_HEIGHT = 72;
 export class Bear {
   readonly view: Container;
   private body: Graphics;
+  private arm: Graphics;
   private ticker: Ticker;
   private idleTime = 0;
   private idleEnabled = true;
@@ -18,6 +19,15 @@ export class Bear {
     this.body = new Graphics();
     this.drawIdle();
     this.view.addChild(this.body);
+
+    this.arm = new Graphics();
+    this.arm.roundRect(-7, -20, 14, 20, 7).fill(COLORS.bear);
+    this.arm.circle(0, -20, 8).fill(COLORS.bear);
+    this.arm.x = BEAR_WIDTH / 2 - 10;
+    this.arm.y = -BEAR_HEIGHT + 24;
+    this.arm.alpha = 0;
+    this.view.addChild(this.arm);
+
     this.ticker.add(this.onTick);
   }
 
@@ -53,6 +63,8 @@ export class Bear {
     this.view.alpha = 1;
     this.view.rotation = 0;
     this.body.y = 0;
+    this.arm.alpha = 0;
+    this.arm.y = -BEAR_HEIGHT + 24;
     this.idleEnabled = true;
     this.drawIdle();
   }
@@ -104,11 +116,14 @@ export class Bear {
         const bounce = Math.sin(Math.PI * t);
         this.view.scale.set(1 - bounce * 0.1, 1 + bounce * 0.22);
         this.body.y = -bounce * 20;
+        this.arm.alpha = Math.min(1, bounce * 1.6);
+        this.arm.y = -BEAR_HEIGHT + 24 - bounce * 22;
       },
       easeOutBack,
     );
     this.view.scale.set(1, 1);
     this.body.y = 0;
+    this.arm.alpha = 0;
     this.idleEnabled = true;
   }
 }
