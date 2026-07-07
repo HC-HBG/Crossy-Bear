@@ -1,0 +1,98 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #1a1a3e;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: #fff;
+}
+
+#canvas-host {
+  position: absolute;
+  inset: 0;
+}
+
+#canvas-host canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: manipulation;
+}
+
+#hud {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  pointer-events: none;
+  padding: 12px;
+}
+
+#hud-top,
+#hud-bottom {
+  pointer-events: auto;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+#hud-top {
+  justify-content: space-between;
+}
+
+#hud-bottom {
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.stat {
+  background: rgba(11, 11, 24, 0.55);
+  border-radius: 10px;
+  padding: 6px 12px;
+  font-size: 13px;
+}
+
+.stat strong {
+  display: block;
+  font-size: 16px;
+  color: #f5b41e;
+}
+
+button,
+select,
+input {
+  font: inherit;
+  border-radius: 10px;
+  border: none;
+  padding: 10px 16px;
+  cursor: pointer;
+}
+
+button {
+  background: #f5b41e;
+  color: #1a1a3e;
+  font-weight: 700;
+}
+
+button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+#cashOutBtn {
+  background: #3fa34d;
+  color: #fff;
+}
+
+input {
+  width: 90px;
+}
