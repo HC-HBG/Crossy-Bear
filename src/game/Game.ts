@@ -54,12 +54,21 @@ export class Game {
     }
   }
 
+  /** Available vertical room for the lane strip between the HUD header and footer. */
+  private laneDepth(): number {
+    return Math.max(220, Math.min(480, this.app.screen.height - 170));
+  }
+
+  private worldY(): number {
+    return this.app.screen.height / 2;
+  }
+
   private onTick = (): void => {
     const desiredCameraX = -(this.bear.view.x - this.app.screen.width * 0.35);
     const lerp = Math.min(1, this.app.ticker.deltaMS / 160);
     this.cameraX += (desiredCameraX - this.cameraX) * lerp;
     this.world.x = this.cameraX;
-    this.world.y = this.app.screen.height * 0.58;
+    this.world.y = this.worldY();
   };
 
   private duration(base: number, snap: SessionSnapshot): number {
@@ -98,11 +107,12 @@ export class Game {
 
   private startNewRound(snap: SessionSnapshot): void {
     this.laneField?.destroy();
-    this.laneField = buildLaneField(snap.difficulty, this.app.ticker);
+    this.laneField = buildLaneField(snap.difficulty, this.app.ticker, this.laneDepth());
     this.world.addChildAt(this.laneField.container, 0);
     this.bear.reset(this.laneField.laneX(0));
     this.cameraX = -(this.bear.view.x - this.app.screen.width * 0.35);
     this.world.x = this.cameraX;
+    this.world.y = this.worldY();
     this.lastStepsCompleted = 0;
   }
 

@@ -1,5 +1,5 @@
 import { Container, Graphics, Text, TextStyle, Ticker } from "pixi.js";
-import { COLORS, LANE_WIDTH, LANE_DEPTH } from "./constants";
+import { COLORS, LANE_WIDTH } from "./constants";
 import { DIFFICULTIES, buildMultiplierTable, zoneForStep, type Difficulty, type Zone } from "../engine/mathEngine";
 
 export interface LaneView {
@@ -46,13 +46,14 @@ function buildLog(): Graphics {
   return g;
 }
 
-export function buildLaneField(difficulty: Difficulty, ticker: Ticker): LaneField {
+export function buildLaneField(difficulty: Difficulty, ticker: Ticker, laneDepth: number): LaneField {
   const def = DIFFICULTIES[difficulty];
   const table = buildMultiplierTable(def);
   const n = table.length;
   const container = new Container();
   const lanes: LaneView[] = [];
   const ambientEntries: Array<{ view: Container } & Ambient> = [];
+  const LANE_DEPTH = laneDepth;
 
   const startBank = new Graphics();
   startBank.rect(-LANE_WIDTH * 1.5, -LANE_DEPTH / 2, LANE_WIDTH * 1.5, LANE_DEPTH).fill(COLORS.grass);
