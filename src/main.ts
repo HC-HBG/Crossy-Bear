@@ -1,6 +1,7 @@
 import { GameSession } from "./state";
 import { Game } from "./game/Game";
 import { buildHud } from "./ui/hud";
+import { wireAudio } from "./audio/wireAudio";
 import type { Rig } from "./engine/mathEngine";
 import "./style.css";
 
@@ -16,6 +17,7 @@ function parseUrlParams(): { seed?: number; rig?: Rig } {
 async function bootstrap(): Promise<void> {
   const { seed, rig } = parseUrlParams();
   const session = new GameSession({ seed, rig });
+  wireAudio(session);
   const root = document.getElementById("app")!;
 
   let game: Game | null = null;
