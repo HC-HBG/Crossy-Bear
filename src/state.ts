@@ -1,8 +1,14 @@
-import { MathEngine, type Difficulty, type StepOutcome, type CashOutResult, type Rig } from "./engine/mathEngine";
+import { DIFFICULTIES, MathEngine, type Difficulty, type StepOutcome, type CashOutResult, type Rig } from "./engine/mathEngine";
 
 /**
  * Explicit round/session state machine. IDLE -> ROUND_ACTIVE -> RESOLVING_STEP
  * -> STEP_WON | DEAD | CASHED_OUT, then back to IDLE/DEAD/CASHED_OUT loop.
+ *
+ * Starting a round locks the bet and difficulty and parks the bear at the
+ * kerb (ROUND_ACTIVE, stepsCompleted = 0) — it does not resolve a step. The
+ * first hop, like every later one, drives ROUND_ACTIVE or STEP_WON into
+ * RESOLVING_STEP.
+ *
  * Every mutating method checks the current phase synchronously before doing
  * anything async, so a second input arriving while a step is already
  * resolving is a no-op — first input wins.
@@ -138,6 +144,7 @@ export class GameSession {
     return this.isEditable() && this.bet > 0 && this.bet <= this.balance;
   }
 
+  /** Locks the bet and difficulty and places the bear at the kerb. The first tap resolves step 1. */
   async startRound(): Promise<void> {
     if (!this.canStart()) return;
     this.phase = "ROUND_ACTIVE";
@@ -146,15 +153,14 @@ export class GameSession {
     this.lastCashOut = null;
     this.lastOutcome = null;
     this.stepsCompleted = 0;
+    this.totalSteps = DIFFICULTIES[this.difficulty].steps;
     this.engine = new MathEngine({ seed: this.seed, rig: this.rig });
-    this.phase = "RESOLVING_STEP";
+    await this.engine.startRound(this.bet, this.difficulty);
     this.emit();
-    const outcome = await this.engine.startRound(this.bet, this.difficulty);
-    this.applyOutcome(outcome);
   }
 
   async hop(): Promise<void> {
-    if (this.phase !== "STEP_WON" || !this.engine) return;
+    if ((this.phase !== "ROUND_ACTIVE" && this.phase !== "STEP_WON") || !this.engine) return;
     const engine = this.engine;
     this.phase = "RESOLVING_STEP";
     this.emit();

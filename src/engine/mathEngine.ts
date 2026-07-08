@@ -16,34 +16,110 @@ export type Rig = "win" | "lose" | null;
 export interface DifficultyDef {
   id: Difficulty;
   label: string;
-  roadSteps: number;
-  riverSteps: number;
-  roadP: number;
-  riverP: number;
+  /** Total number of lanes in the ladder. */
+  steps: number;
+  /** Daredevil-only: a special-cased survival probability for step 1, outside the linear decay. */
+  firstStepP?: number;
+  /** Survival probability at the start of the linear-decay schedule (step 1, or step 2 when firstStepP is set). */
+  decayStartP: number;
+  /**
+   * Calibration target: the approximate final-step multiplier the decay
+   * schedule's end probability is solved for. The end probability itself is
+   * not stored — it's derived at runtime by calibrateEndProb() so the
+   * schedule is always internally consistent with RTP and the step count.
+   */
+  targetCeiling: number;
 }
 
 /** Target return-to-player used to derive the multiplier ladder. */
 export const RTP = 0.96;
 
+/** Lanes per alternating road/river zone block (all difficulties' step counts are multiples of this). */
+export const ZONE_BLOCK_SIZE = 5;
+
 export const DIFFICULTIES: Record<Difficulty, DifficultyDef> = {
-  easy: { id: "easy", label: "Easy", roadSteps: 14, riverSteps: 6, roadP: 0.96, riverP: 0.94 },
-  medium: { id: "medium", label: "Medium", roadSteps: 9, riverSteps: 5, roadP: 0.875, riverP: 0.85 },
-  hard: { id: "hard", label: "Hard", roadSteps: 6, riverSteps: 4, roadP: 0.79, riverP: 0.74 },
-  daredevil: { id: "daredevil", label: "Daredevil", roadSteps: 4, riverSteps: 4, roadP: 0.48, riverP: 0.42 },
+  easy: { id: "easy", label: "Easy", steps: 40, decayStartP: 0.93, targetCeiling: 1000 },
+  medium: { id: "medium", label: "Medium", steps: 30, decayStartP: 0.875, targetCeiling: 2500 },
+  hard: { id: "hard", label: "Hard", steps: 20, decayStartP: 0.78, targetCeiling: 10000 },
+  daredevil: {
+    id: "daredevil",
+    label: "Daredevil",
+    steps: 10,
+    firstStepP: 0.48,
+    decayStartP: 0.4,
+    targetCeiling: 50000,
+  },
 };
 
 export function totalSteps(def: DifficultyDef): number {
-  return def.roadSteps + def.riverSteps;
+  return def.steps;
 }
 
-/** Zone for a given 0-based step index. */
-export function zoneForStep(def: DifficultyDef, stepIndex: number): Zone {
-  return stepIndex < def.roadSteps ? "road" : "river";
+/**
+ * Zone for a given 0-based step index — alternates in ZONE_BLOCK_SIZE-lane
+ * bands, starting with road. Takes a DifficultyDef (unused today) so a
+ * future difficulty could define its own zone pattern without changing the
+ * call sites.
+ */
+export function zoneForStep(_def: DifficultyDef, stepIndex: number): Zone {
+  const block = Math.floor(stepIndex / ZONE_BLOCK_SIZE);
+  return block % 2 === 0 ? "road" : "river";
+}
+
+function linearDecayProduct(startP: number, endP: number, steps: number): number {
+  let product = 1;
+  for (let i = 0; i < steps; i++) {
+    const p = steps === 1 ? endP : startP + (endP - startP) * (i / (steps - 1));
+    product *= p;
+  }
+  return product;
+}
+
+/**
+ * Solves for the survival probability at the end of the linear-decay
+ * schedule such that the final-step multiplier lands on `targetCeiling`,
+ * holding the start probability, step count, and any fixed extra factor
+ * (Daredevil's special-cased first step) constant. The cumulative survival
+ * product — and so the resulting ceiling — is strictly monotonic in the end
+ * probability, so bisection converges quickly and deterministically.
+ */
+function calibrateEndProb(startP: number, steps: number, targetCeiling: number, extraFactor = 1): number {
+  let lo = 0.0001;
+  let hi = startP;
+  for (let i = 0; i < 100; i++) {
+    const mid = (lo + hi) / 2;
+    const cumP = extraFactor * linearDecayProduct(startP, mid, steps);
+    const ceiling = RTP / cumP;
+    if (ceiling > targetCeiling) lo = mid;
+    else hi = mid;
+  }
+  return (lo + hi) / 2;
+}
+
+const scheduleCache = new Map<Difficulty, number[]>();
+
+/** Full per-step survival-probability schedule for a difficulty. Memoized — calibration is a search, not O(1). */
+function survivalSchedule(def: DifficultyDef): number[] {
+  const cached = scheduleCache.get(def.id);
+  if (cached) return cached;
+
+  const decaySteps = def.firstStepP !== undefined ? def.steps - 1 : def.steps;
+  const endP = calibrateEndProb(def.decayStartP, decaySteps, def.targetCeiling, def.firstStepP ?? 1);
+
+  const schedule: number[] = [];
+  if (def.firstStepP !== undefined) schedule.push(def.firstStepP);
+  for (let i = 0; i < decaySteps; i++) {
+    const p = decaySteps === 1 ? endP : def.decayStartP + (endP - def.decayStartP) * (i / (decaySteps - 1));
+    schedule.push(p);
+  }
+
+  scheduleCache.set(def.id, schedule);
+  return schedule;
 }
 
 /** Per-step survival probability for a given 0-based step index. */
 export function survivalProbForStep(def: DifficultyDef, stepIndex: number): number {
-  return zoneForStep(def, stepIndex) === "road" ? def.roadP : def.riverP;
+  return survivalSchedule(def)[stepIndex];
 }
 
 /**
@@ -117,18 +193,17 @@ export class MathEngine {
     return buildMultiplierTable(DIFFICULTIES[difficulty]);
   }
 
-  /** Starts a round and immediately resolves the first step — no dead click. */
-  async startRound(bet: number, difficulty: Difficulty): Promise<StepOutcome> {
+  /** Locks in the bet and difficulty and arms the round. Resolves no step — the bear waits at the kerb. */
+  async startRound(bet: number, difficulty: Difficulty): Promise<void> {
     if (bet <= 0) throw new Error("bet must be positive");
     this.def = DIFFICULTIES[difficulty];
     this.table = buildMultiplierTable(this.def);
     this.bet = bet;
     this.stepIndex = 0;
     this.status = "active";
-    return this.resolveStep();
   }
 
-  /** Advances one lane. Throws if the round is not active. */
+  /** Advances one lane — the first call resolves step 1. Throws if the round is not active. */
   async step(): Promise<StepOutcome> {
     if (this.status !== "active") throw new Error("round is not active");
     return this.resolveStep();

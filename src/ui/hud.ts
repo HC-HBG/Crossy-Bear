@@ -1,5 +1,5 @@
 import { GameSession, type SessionSnapshot } from "../state";
-import { DIFFICULTIES, type Difficulty } from "../engine/mathEngine";
+import { DIFFICULTIES, MathEngine, type Difficulty } from "../engine/mathEngine";
 import { ToastHost } from "./toast";
 import { PaytablePanel, logPaytablesToConsole } from "./paytable";
 
@@ -179,7 +179,12 @@ export function buildHud(root: HTMLElement, session: GameSession, callbacks: Hud
     } else {
       cashOutBtn.textContent = "Cash Out";
       cashOutBtn.style.setProperty("--weight", "1");
-      if (snap.phase !== "STEP_WON") nextMultiplierEl.textContent = "";
+      if (snap.phase === "ROUND_ACTIVE") {
+        const firstMultiplier = MathEngine.tableFor(snap.difficulty)[0];
+        nextMultiplierEl.textContent = `Tap to hop — ${firstMultiplier.toFixed(2)}x on step 1`;
+      } else if (snap.phase !== "STEP_WON") {
+        nextMultiplierEl.textContent = "";
+      }
     }
 
     if (snap.lastOutcome && (snap.phase === "STEP_WON" || snap.phase === "DEAD")) {
@@ -194,11 +199,13 @@ export function buildHud(root: HTMLElement, session: GameSession, callbacks: Hud
     muteBtn.textContent = snap.muted ? "🔇" : "🔊";
     muteBtn.classList.toggle("active", snap.muted);
 
-    // Subtle, non-modal zone-transition prompt: fires once when the bear's
-    // current lane flips from road to river.
+    // Subtle, non-modal prompts: once when the bear is parked at the kerb
+    // waiting for the first tap, and once when its current lane flips from
+    // road to river.
     const isFreshRound = lastPhaseForToast === "IDLE" || lastPhaseForToast === "DEAD" || lastPhaseForToast === "CASHED_OUT";
-    if (snap.phase === "RESOLVING_STEP" && isFreshRound) {
+    if (snap.phase === "ROUND_ACTIVE" && isFreshRound) {
       lastZoneShown = null;
+      toasts.show("Bear's at the kerb — tap to cross.");
     }
     if (snap.phase === "STEP_WON" && snap.lastOutcome) {
       const zone = snap.lastOutcome.zone;

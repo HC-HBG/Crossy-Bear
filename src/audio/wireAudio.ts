@@ -11,7 +11,7 @@ export function wireAudio(session: GameSession): AudioEngine {
     audio.setMuted(snap.muted);
 
     const isNewRound =
-      snap.phase === "RESOLVING_STEP" && (lastPhase === "IDLE" || lastPhase === "DEAD" || lastPhase === "CASHED_OUT");
+      snap.phase === "ROUND_ACTIVE" && (lastPhase === "IDLE" || lastPhase === "DEAD" || lastPhase === "CASHED_OUT");
     if (isNewRound) {
       audio.startTensionLayer();
       lastSteps = 0;

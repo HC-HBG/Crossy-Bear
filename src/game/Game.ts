@@ -1,6 +1,6 @@
 import { Application, Container, Graphics } from "pixi.js";
 import { GameSession, type SessionSnapshot, type Phase } from "../state";
-import { COLORS } from "./constants";
+import { COLORS, LANE_WIDTH } from "./constants";
 import { buildLaneField, type LaneField } from "./Lanes";
 import { Bear } from "./Bear";
 import { buildVehicle, randomVehicleKind } from "./Vehicles";
@@ -48,10 +48,10 @@ export class Game {
     return new Game(app, session);
   }
 
-  /** Primary input: hop if a round is mid-flight, otherwise start a new round. */
+  /** Primary input: hop if the bear is at the kerb or mid-flight, otherwise start a new round. */
   onPrimaryInput(): void {
     const snap = this.session.snapshot();
-    if (snap.phase === "STEP_WON") {
+    if (snap.phase === "ROUND_ACTIVE" || snap.phase === "STEP_WON") {
       void this.session.hop();
     } else if (this.session.canStart()) {
       void this.session.startRound();
@@ -73,7 +73,25 @@ export class Game {
     this.cameraX += (desiredCameraX - this.cameraX) * lerp;
     this.world.x = this.cameraX;
     this.world.y = this.worldY();
+    this.cullOffscreenLanes();
   };
+
+  /**
+   * Ladders now run up to 40 lanes long. Only the handful near the camera
+   * are ever visible, so skip rendering (and its draw calls) for the rest
+   * — cheap to check, and keeps frame cost proportional to what's on
+   * screen instead of the whole board.
+   */
+  private cullOffscreenLanes(): void {
+    if (!this.laneField) return;
+    const margin = LANE_WIDTH * 2;
+    const viewLeft = -this.world.x - margin;
+    const viewRight = -this.world.x + this.app.screen.width + margin;
+    for (const lane of this.laneField.lanes) {
+      const x = lane.container.x;
+      lane.container.renderable = x + LANE_WIDTH / 2 >= viewLeft && x - LANE_WIDTH / 2 <= viewRight;
+    }
+  }
 
   private duration(base: number, snap: SessionSnapshot): number {
     return snap.turbo ? TURBO_MS : base;
@@ -85,7 +103,7 @@ export class Game {
 
   private handleSnapshot(snap: SessionSnapshot): void {
     const isNewRound =
-      snap.phase === "RESOLVING_STEP" &&
+      snap.phase === "ROUND_ACTIVE" &&
       (this.lastPhase === "IDLE" || this.lastPhase === "DEAD" || this.lastPhase === "CASHED_OUT");
 
     if (isNewRound) {

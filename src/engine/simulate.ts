@@ -6,7 +6,7 @@
  * ~96% (the configured RTP constant), proving the multiplier ladder pays out
  * correctly regardless of when the player would choose to stop.
  */
-import { DIFFICULTIES, MathEngine, buildMultiplierTable, totalSteps, type Difficulty } from "./mathEngine.js";
+import { DIFFICULTIES, MathEngine, buildMultiplierTable, totalSteps, zoneForStep, type Difficulty } from "./mathEngine.js";
 
 const ROUNDS = 1_000_000;
 const BET = 1;
@@ -19,27 +19,25 @@ async function simulateDifficulty(difficulty: Difficulty): Promise<void> {
 
   for (let r = 0; r < ROUNDS; r++) {
     const engine = new MathEngine();
-    let outcome = await engine.startRound(BET, difficulty);
-    let idx = 0;
+    await engine.startRound(BET, difficulty);
     // "always continue": keep stepping until death or the forced final cash-out
-    for (;;) {
+    for (let idx = 0; idx < n; idx++) {
+      const outcome = await engine.step();
       if (!outcome.survived) break;
       surviveCount[idx] = surviveCount[idx] + 1;
-      idx++;
       if (outcome.isFinalStep) break;
-      outcome = await engine.step();
     }
   }
 
-  console.log(`\n=== ${def.label} — ${n} steps (${def.roadSteps} road, ${def.riverSteps} river) ===`);
+  console.log(`\n=== ${def.label} — ${n} steps ===`);
   const rows = table.map((multiplier, i) => {
     const survivedFraction = surviveCount[i] / ROUNDS;
     const realizedRTP = survivedFraction * multiplier;
     return {
       step: i + 1,
-      zone: i < def.roadSteps ? "road" : "river",
+      zone: zoneForStep(def, i),
       multiplier: multiplier.toFixed(2) + "x",
-      survivedRate: (survivedFraction * 100).toFixed(3) + "%",
+      survivedRate: (survivedFraction * 100).toFixed(4) + "%",
       realisedRTP: (realizedRTP * 100).toFixed(2) + "%",
     };
   });

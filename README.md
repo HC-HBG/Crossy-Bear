@@ -50,33 +50,52 @@ the client treats it as a black box — this is the seam where a real RGS
 (Remote Game Server) client would eventually replace it.
 
 - Each round is a sequence of independent Bernoulli trials — one per lane.
-  Per-step survival probability `p` and step counts are fixed per difficulty:
+  Per-step survival probability `p` follows a **linear-decay schedule**
+  rather than a flat per-zone value: it starts high and decays step by step
+  toward an end value, so later lanes are meaningfully riskier than early
+  ones. The end-of-schedule probability for each difficulty is *calibrated*
+  (solved by bisection in `mathEngine.ts`, holding the start probability and
+  step count fixed) so the final-step multiplier lands on that difficulty's
+  target ceiling:
 
-  | Difficulty | Steps (road + river) | Road `p` | River `p` | Ceiling |
-  |---|---|---|---|---|
-  | Easy | 20 (14 + 6) | 0.96 | 0.94 | ~2.46x |
-  | Medium | 14 (9 + 5) | 0.875 | 0.85 | ~7.20x |
-  | Hard | 10 (6 + 4) | 0.79 | 0.74 | ~13.17x |
-  | Daredevil | 8 (4 + 4) | 0.48 | 0.42 | ~581.18x |
+  | Difficulty | Steps | `p` schedule | Calibrated ceiling |
+  |---|---|---|---|
+  | Easy | 40 | 0.93 → ~0.754 (linear) | ~1,000x |
+  | Medium | 30 | 0.875 → ~0.669 (linear) | ~2,500x |
+  | Hard | 20 | 0.78 → ~0.492 (linear) | ~10,000x |
+  | Daredevil | 10 | step 1 fixed at 0.48, steps 2–10: 0.40 → ~0.182 (linear) | ~50,000x |
 
+  Zones are ambience only (see below) and alternate in 5-lane bands — road,
+  river, road, river — for the full length of the ladder; they don't affect
+  `p` at all.
 - The multiplier after surviving `n` steps is
-  `RTP / (p₁ × p₂ × … × pₙ)`, rounded to 2 decimals, with `RTP = 0.96`. The
-  full ladder is generated at startup for every difficulty, rendered in the
-  in-game Paytable panel, and also `console.table`'d for quick verification.
+  `RTP / (p₁ × p₂ × … × pₙ)`, rounded to 2 decimals, with `RTP = 0.96`. This
+  holds regardless of the schedule shape — flat or decaying — which is why
+  `npm run simulate` converges on ~96% realised RTP at every depth even
+  though the per-step odds now change every lane. The full ladder is
+  generated (and calibrated) once per difficulty at startup, memoized,
+  rendered in the in-game Paytable panel, and also `console.table`'d for
+  quick verification.
 - Randomness uses a seedable **mulberry32** PRNG so a given `?seed=` always
   replays the same round.
-- **Starting a round commits the first step immediately** — there is no dead
-  click. Reaching the final lane (the far bank) is a **forced cash-out** at
-  the top multiplier, with the demo's one signature celebration (coin
-  fountain + camera punch-in).
+- **Start locks the bet and difficulty and places the bear at the kerb** —
+  it does not resolve any step. The first tap resolves step 1, exactly like
+  every tap after it. Reaching the final lane (the far bank) is a **forced
+  cash-out** at the top multiplier, with the demo's one signature
+  celebration (coin fountain + camera punch-in).
 
 ### Verifying the math: `npm run simulate`
 
 `src/engine/simulate.ts` runs a headless Monte Carlo self-test: 1,000,000
 rounds per difficulty with a naive "always continue" strategy, reporting the
 realised RTP at every possible cash-out step. Every step, on every
-difficulty, converges on ~96% — proving the ladder pays out correctly
-regardless of when a player would choose to stop.
+difficulty, converges on ~96% — proving the decaying-probability ladder pays
+out correctly regardless of when a player would choose to stop. The very
+deepest steps (well under 0.1% survival — e.g. Daredevil's last couple of
+lanes) have too few survivors in a 1M-round sample for a tight estimate, so
+their printed realised-RTP figures are noisier; the ~96% RTP at those depths
+is still exact analytically (it's built into the multiplier formula, not
+fitted to the simulation).
 
 ## No skill, no timing — by design
 
@@ -112,12 +131,16 @@ src/
 IDLE → ROUND_ACTIVE → RESOLVING_STEP → STEP_WON | DEAD | CASHED_OUT
 ```
 
-`STEP_WON` loops back to `RESOLVING_STEP` on the next hop, or resolves to
-`CASHED_OUT` on cash-out. `DEAD` and `CASHED_OUT` both return to a fresh
-`ROUND_ACTIVE` on the next Start/Play Again. Every mutating method
-(`hop()`, `cashOut()`) checks the current phase **synchronously**, before
-any `await`, so a near-simultaneous hop + cash-out race resolves
-first-input-wins — the loser is a no-op.
+`ROUND_ACTIVE` is a real, stable state, not a pass-through: Start locks the
+bet and difficulty, debits the balance, and parks the bear at the kerb —
+`stepsCompleted` is 0 and there's nothing to cash out yet. Both
+`ROUND_ACTIVE` and `STEP_WON` accept a hop, which drives `RESOLVING_STEP`;
+that's what makes the first tap and every later tap go through the same
+code path. `STEP_WON` also resolves to `CASHED_OUT` on cash-out. `DEAD` and
+`CASHED_OUT` both return to a fresh `ROUND_ACTIVE` on the next Start/Play
+Again. Every mutating method (`hop()`, `cashOut()`) checks the current phase
+**synchronously**, before any `await`, so a near-simultaneous hop + cash-out
+race resolves first-input-wins — the loser is a no-op.
 
 ## Copy rules
 
@@ -164,7 +187,7 @@ This is a concept/UX demo, not a production game. Deliberately not included:
   round resolves, independent of the animation still playing). Turbo mode
   drops step-resolve tweens from ~220ms to ~40ms. ✅
 - Cash Out always shows a currency amount; the next-step multiplier is
-  always visible alongside it (e.g. "1.10x now → 1.25x next"). ✅
+  always visible alongside it (e.g. "1.10x now → 1.26x next" on Medium). ✅
 - No timing/skill influence on outcomes; `?rig=win` / `?rig=lose` reliably
   demo both outcomes. ✅
 - No "score"/"skill" language anywhere in the UI (grep-verified). ✅
