@@ -1,4 +1,4 @@
-import { GameSession, type SessionSnapshot } from "../state";
+import { GameSession, MAX_BET, type SessionSnapshot } from "../state";
 import { DIFFICULTIES, MathEngine, type Difficulty } from "../engine/mathEngine";
 import { ToastHost } from "./toast";
 import { PaytablePanel, logPaytablesToConsole } from "./paytable";
@@ -45,7 +45,7 @@ export function buildHud(root: HTMLElement, session: GameSession, callbacks: Hud
             <button id="betHalf" type="button">½</button>
             <div class="bet-input-wrap">
               <span>Bet</span>
-              <input id="bet" type="number" min="0.1" step="0.1" inputmode="decimal" />
+              <input id="bet" type="number" min="0.1" max="${MAX_BET}" step="0.1" inputmode="decimal" />
             </div>
             <button id="betDouble" type="button">2x</button>
             <button id="betMax" type="button">Max</button>
@@ -95,7 +95,7 @@ export function buildHud(root: HTMLElement, session: GameSession, callbacks: Hud
   }
 
   function clampBet(value: number, balance: number): number {
-    return Math.max(0.1, Math.min(Math.round(value * 100) / 100, balance));
+    return Math.max(0.1, Math.min(Math.round(value * 100) / 100, balance, MAX_BET));
   }
 
   betInput.addEventListener("change", () => {
@@ -111,7 +111,7 @@ export function buildHud(root: HTMLElement, session: GameSession, callbacks: Hud
   });
   document.getElementById("betMax")!.addEventListener("click", () => {
     const snap = session.snapshot();
-    session.setBet(clampBet(snap.balance, snap.balance));
+    session.setBet(clampBet(MAX_BET, snap.balance));
   });
 
   startBtn.addEventListener("click", () => callbacks.onPrimaryInput());

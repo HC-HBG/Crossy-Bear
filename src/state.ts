@@ -33,7 +33,10 @@ type Listener = (snap: SessionSnapshot) => void;
 
 const BALANCE_KEY = "crossyBear.balance";
 const BEST_WIN_KEY = "crossyBear.bestWin";
-const DEFAULT_BALANCE = 1000;
+const DEFAULT_BALANCE = 1_000_000;
+
+/** Hard cap on bet size, independent of balance. */
+export const MAX_BET = 1000;
 
 function readNumber(key: string, fallback: number): number {
   try {
@@ -112,7 +115,8 @@ export class GameSession {
 
   setBet(bet: number): void {
     if (!this.isEditable()) return;
-    this.bet = Math.max(0.1, Math.round(bet * 100) / 100);
+    const clamped = Math.min(MAX_BET, this.balance, Math.max(0.1, bet));
+    this.bet = Math.round(clamped * 100) / 100;
     this.emit();
   }
 
