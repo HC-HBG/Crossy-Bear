@@ -38,8 +38,14 @@ dependencies — it can be hosted anywhere, including GitHub Pages (see
   cash-out flow, and the far-bank big-win celebration).
 - `?rig=lose` — force the very next step to fail (useful for demoing the
   death flow and restart speed).
+- `?reset` — clear the persisted balance/best-win before loading, so the
+  session starts fresh at the default balance instead of picking up
+  wherever a previous visit left off (balance and best win live in
+  `localStorage`, keyed per-origin, so they otherwise survive reloads and
+  default-balance changes alike).
 
-Example: `http://localhost:5173/?seed=42&rig=win`
+Example: `http://localhost:5173/?seed=42&rig=win`, or
+`http://localhost:5173/?reset` to wipe a stale balance.
 
 ## The math model
 

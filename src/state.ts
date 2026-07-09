@@ -49,6 +49,16 @@ function readNumber(key: string, fallback: number): number {
   }
 }
 
+/** Clears persisted balance/best-win so the next GameSession starts fresh. Wired to the ?reset debug param. */
+export function resetPersistedProgress(): void {
+  try {
+    localStorage.removeItem(BALANCE_KEY);
+    localStorage.removeItem(BEST_WIN_KEY);
+  } catch {
+    // localStorage may be unavailable — nothing to reset.
+  }
+}
+
 function writeNumber(key: string, value: number): void {
   try {
     localStorage.setItem(key, String(value));
