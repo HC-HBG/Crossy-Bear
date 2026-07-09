@@ -5,9 +5,11 @@ step-wager casino game for HungryBear Gaming. The goal of this build is to prove
 the core loop feels great: **tap → resolve → decide (cash out or continue) →
 restart.** There is no real-money wagering, no backend, and no account system.
 
-Built with PixiJS v8 + TypeScript + Vite. All art is code-generated (Pixi
-`Graphics`) — no image files. All audio is synthesised with WebAudio — no
-audio files.
+Built with PixiJS v8 + TypeScript + Vite. The bear is four pixel-art PNG
+sprites (`src/assets/bear/`, ~170KB total, trimmed and downscaled from
+supplied source art); everything else on screen — vehicles, road, river,
+lanes, coin fountain — is still code-generated Pixi `Graphics`, no image
+files. All audio is synthesised with WebAudio — no audio files.
 
 ## Running it
 

@@ -2,7 +2,7 @@ import { Application, Container, Graphics } from "pixi.js";
 import { GameSession, type SessionSnapshot, type Phase } from "../state";
 import { COLORS, LANE_WIDTH } from "./constants";
 import { buildLaneField, type LaneField } from "./Lanes";
-import { Bear } from "./Bear";
+import { Bear, preloadBearTextures } from "./Bear";
 import { buildVehicle, randomVehicleKind } from "./Vehicles";
 import { spawnCoinFountain, cameraPunchIn } from "./Celebration";
 import { tween, easeOutQuad } from "./tween";
@@ -24,12 +24,12 @@ export class Game {
   private animQueue: Promise<void> = Promise.resolve();
   private hitVehicleSeed = 0;
 
-  private constructor(app: Application, session: GameSession) {
+  private constructor(app: Application, session: GameSession, bearTextures: Awaited<ReturnType<typeof preloadBearTextures>>) {
     this.app = app;
     this.session = session;
     this.world = new Container();
     app.stage.addChild(this.world);
-    this.bear = new Bear(app.ticker);
+    this.bear = new Bear(app.ticker, bearTextures);
     this.world.addChild(this.bear.view);
     app.ticker.add(this.onTick);
     session.subscribe((snap) => this.handleSnapshot(snap));
@@ -37,15 +37,18 @@ export class Game {
 
   static async create(canvasHost: HTMLElement, session: GameSession): Promise<Game> {
     const app = new Application();
-    await app.init({
-      resizeTo: canvasHost,
-      backgroundColor: COLORS.indigo,
-      antialias: true,
-      resolution: Math.min(window.devicePixelRatio || 1, 2),
-      autoDensity: true,
-    });
+    const [, bearTextures] = await Promise.all([
+      app.init({
+        resizeTo: canvasHost,
+        backgroundColor: COLORS.indigo,
+        antialias: true,
+        resolution: Math.min(window.devicePixelRatio || 1, 2),
+        autoDensity: true,
+      }),
+      preloadBearTextures(),
+    ]);
     canvasHost.appendChild(app.canvas);
-    return new Game(app, session);
+    return new Game(app, session, bearTextures);
   }
 
   /** Primary input: hop if the bear is at the kerb or mid-flight, otherwise start a new round. */
@@ -167,6 +170,12 @@ export class Game {
   private async animateCashOut(snap: SessionSnapshot): Promise<void> {
     if (!this.laneField) return;
     const isBigWin = snap.lastOutcome?.isFinalStep === true;
+    // lastCashOut isn't populated on the snapshot this handler actually reacts to (see
+    // handleSnapshot's CASHED_OUT branch — it fires on the phase-flip emit, before cashOut()'s
+    // async engine.cashOut() resolves and updates lastCashOut). lastOutcome.multiplier is the
+    // just-survived step's cashable multiplier, which is exactly what the round cashes out at,
+    // and it's already fresh at that point for both the voluntary and forced-final paths.
+    const celebrateBig = (snap.lastOutcome?.multiplier ?? 0) >= 2;
 
     if (isBigWin) {
       const targetX = this.laneField.laneX(this.laneField.totalSteps + 1);
@@ -176,9 +185,12 @@ export class Game {
     if (isBigWin && !snap.turbo) {
       const focal = this.bear.view.getGlobalPosition();
       spawnCoinFountain(this.app.stage, this.app.ticker, focal.x, focal.y - 50);
-      await Promise.all([this.bear.fistPump(CASHOUT_MS), cameraPunchIn(this.app.stage, this.app.ticker, focal)]);
+      await Promise.all([
+        this.bear.fistPump(CASHOUT_MS, celebrateBig),
+        cameraPunchIn(this.app.stage, this.app.ticker, focal),
+      ]);
     } else {
-      await this.bear.fistPump(this.duration(CASHOUT_MS, snap));
+      await this.bear.fistPump(this.duration(CASHOUT_MS, snap), celebrateBig);
     }
   }
 
