@@ -90,7 +90,9 @@ the client treats it as a black box — this is the seam where a real RGS
   it does not resolve any step. The first tap resolves step 1, exactly like
   every tap after it. Reaching the final lane (the far bank) is a **forced
   cash-out** at the top multiplier, with the demo's one signature
-  celebration (coin fountain + camera punch-in).
+  celebration (coin fountain + camera punch-in). Any cash-out (voluntary or
+  forced) at 2x or more swaps the bear's idle sprite for the celebrate pose;
+  5x or more additionally bursts confetti around the bear.
 
 ### Verifying the math: `npm run simulate`
 

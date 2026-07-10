@@ -4,7 +4,7 @@ import { COLORS, LANE_WIDTH } from "./constants";
 import { buildLaneField, type LaneField } from "./Lanes";
 import { Bear, preloadBearTextures } from "./Bear";
 import { buildVehicle, randomVehicleKind } from "./Vehicles";
-import { spawnCoinFountain, cameraPunchIn } from "./Celebration";
+import { spawnCoinFountain, spawnConfettiBurst, cameraPunchIn } from "./Celebration";
 import { tween, easeOutQuad } from "./tween";
 
 const HOP_MS = 220;
@@ -175,15 +175,21 @@ export class Game {
     // async engine.cashOut() resolves and updates lastCashOut). lastOutcome.multiplier is the
     // just-survived step's cashable multiplier, which is exactly what the round cashes out at,
     // and it's already fresh at that point for both the voluntary and forced-final paths.
-    const celebrateBig = (snap.lastOutcome?.multiplier ?? 0) >= 2;
+    const multiplier = snap.lastOutcome?.multiplier ?? 0;
+    const celebrateBig = multiplier >= 2;
+    const confettiBig = multiplier >= 5;
 
     if (isBigWin) {
       const targetX = this.laneField.laneX(this.laneField.totalSteps + 1);
       await this.bear.hopTo(targetX, this.duration(HOP_MS, snap));
     }
 
+    const focal = this.bear.view.getGlobalPosition();
+    if (confettiBig && !snap.turbo) {
+      spawnConfettiBurst(this.app.stage, this.app.ticker, focal.x, focal.y - 60);
+    }
+
     if (isBigWin && !snap.turbo) {
-      const focal = this.bear.view.getGlobalPosition();
       spawnCoinFountain(this.app.stage, this.app.ticker, focal.x, focal.y - 50);
       await Promise.all([
         this.bear.fistPump(CASHOUT_MS, celebrateBig),
