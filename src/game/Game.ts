@@ -119,10 +119,11 @@ export class Game {
   }
 
   /**
-   * Ladders now run up to 40 lanes long. Only the handful near the camera
-   * are ever visible, so skip rendering (and its draw calls) for the rest
-   * — cheap to check, and keeps frame cost proportional to what's on
-   * screen instead of the whole board.
+   * Ladders now run up to 40 lanes long, but the bear only ever moves
+   * forward, so "behind the camera" is naturally bounded by at most 40
+   * lanes — cheap enough to always keep rendered (and it keeps logs/lane
+   * decoration visible behind the bear, not just ahead of it). Only lanes
+   * far ahead (not yet revealed) are worth culling for draw-call cost.
    *
    * Lane labels get a finer per-frame treatment on top of that coarse cull:
    * a label whose screen-space bounds aren't fully inside the viewport
@@ -133,12 +134,11 @@ export class Game {
   private cullOffscreenLanes(): void {
     if (!this.laneField) return;
     const margin = LANE_WIDTH * 2;
-    const viewLeft = -this.world.x - margin;
     const viewRight = -this.world.x + this.app.screen.width + margin;
     const FADE_ZONE = 60;
     for (const lane of this.laneField.lanes) {
       const x = lane.container.x;
-      const renderable = x + LANE_WIDTH / 2 >= viewLeft && x - LANE_WIDTH / 2 <= viewRight;
+      const renderable = x - LANE_WIDTH / 2 <= viewRight;
       lane.container.renderable = renderable;
       if (!renderable) continue;
 
