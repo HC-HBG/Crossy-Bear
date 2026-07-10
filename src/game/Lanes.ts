@@ -195,6 +195,15 @@ function buildKerbStrip(depth: number): Graphics {
   return g;
 }
 
+const FROTH_WIDTH = 12;
+
+/** A lighter froth line, one tile wide, drawn where a river lane meets a kerb. Position it via .x — see call site. */
+function buildFroth(depth: number): Graphics {
+  const g = new Graphics();
+  g.rect(0, -depth / 2, FROTH_WIDTH, depth).fill({ color: COLORS.riverFroth, alpha: 0.3 });
+  return g;
+}
+
 function buildRoadTexture(depth: number): Graphics {
   const g = new Graphics();
   g.rect(-LANE_WIDTH / 2, -depth / 2, LANE_WIDTH, depth).fill(COLORS.road);
@@ -242,10 +251,25 @@ export function buildLaneField(difficulty: Difficulty, ticker: Ticker, laneDepth
     const laneContainer = new Container();
     laneContainer.x = centerX;
 
+    // Kerb (and river froth) are built now but added to laneContainer *after*
+    // its own road/river texture below, so they render on top of it — and,
+    // since laneContainer itself is added after the previous lane's, on top
+    // of that lane's texture too, keeping the full strip visible astride
+    // the boundary instead of half-hidden under whichever texture happens
+    // to be added last.
+    let kerbToAdd: Graphics | null = null;
+    let frothToAdd: Graphics | null = null;
     if (zone !== prevZone) {
-      const kerb = buildKerbStrip(LANE_DEPTH);
-      kerb.x = -LANE_WIDTH / 2;
-      laneContainer.addChild(kerb);
+      kerbToAdd = buildKerbStrip(LANE_DEPTH);
+      kerbToAdd.x = -LANE_WIDTH / 2;
+
+      if (zone === "river") {
+        frothToAdd = buildFroth(LANE_DEPTH);
+        frothToAdd.x = -LANE_WIDTH / 2;
+      } else if (prevZone === "river") {
+        frothToAdd = buildFroth(LANE_DEPTH);
+        frothToAdd.x = -LANE_WIDTH / 2 - FROTH_WIDTH;
+      }
     }
     prevZone = zone;
 
@@ -297,6 +321,9 @@ export function buildLaneField(difficulty: Difficulty, ticker: Ticker, laneDepth
         laneContainer.addChild(stone);
       }
     }
+
+    if (kerbToAdd) laneContainer.addChild(kerbToAdd);
+    if (frothToAdd) laneContainer.addChild(frothToAdd);
 
     const badgeSlot = new Container();
     badgeSlot.y = 0;

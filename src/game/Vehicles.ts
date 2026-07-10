@@ -1,9 +1,14 @@
-import { Container, Graphics } from "pixi.js";
+import { BlurFilter, Container, Graphics } from "pixi.js";
 import { COLORS, VEHICLE_COLORS } from "./constants";
 
 export type VehicleKind = "car" | "taxi" | "truck" | "van" | "sports";
 
 const KINDS: VehicleKind[] = ["car", "taxi", "truck", "van", "sports"];
+
+// The two visually darkest of the 5 bright body colours (by perceived
+// luminance) get a headlight cone — the brighter ones (taxi/white/purple)
+// already read clearly against the road without one.
+const CONE_KINDS: ReadonlySet<VehicleKind> = new Set(["car", "sports"]);
 
 export function randomVehicleKind(seedIndex: number): VehicleKind {
   return KINDS[seedIndex % KINDS.length];
@@ -23,6 +28,16 @@ function glowDot(g: Graphics, x: number, y: number, color: number, big: boolean)
     g.circle(x, y, 4).fill({ color, alpha: 0.32 });
   }
   g.circle(x, y, 2).fill({ color, alpha: 0.95 });
+}
+
+function headlightCone(g: Graphics, x: number, y: number): void {
+  const length = 32;
+  const spread = 11;
+  g.moveTo(x, y)
+    .lineTo(x + length, y - spread)
+    .lineTo(x + length, y + spread)
+    .closePath()
+    .fill({ color: COLORS.headlight, alpha: 0.16 });
 }
 
 /** Chunky rounded-rect pixel silhouette with a dark outline, windshield block, and (for taxi) a roof light. */
@@ -79,6 +94,10 @@ function buildBody(kind: VehicleKind): { body: Container; w: number; h: number }
   const shape = new Graphics();
   const { w, h } = drawBody(shape, kind);
   body.addChild(shape);
+  if (CONE_KINDS.has(kind)) {
+    headlightCone(shape, w / 2, -h / 2 + 4);
+    headlightCone(shape, w / 2, h / 2 - 4);
+  }
   // Headlights (warm glow) at the +w/2 end, taillights (small red, no glow) at the -w/2 end.
   glowDot(shape, w / 2 - 3, -h / 2 + 4, COLORS.headlight, true);
   glowDot(shape, w / 2 - 3, h / 2 - 4, COLORS.headlight, true);
@@ -87,9 +106,17 @@ function buildBody(kind: VehicleKind): { body: Container; w: number; h: number }
   return { body, w, h };
 }
 
+const reflectionBlur = new BlurFilter({ strength: 2, quality: 2 });
+
 /** A bright, chunky pixel vehicle, oriented for horizontal travel (Game/Lanes rotate it for road lanes). */
 export function buildVehicle(kind: VehicleKind): Container {
   const root = new Container();
+  const { body: reflection, h } = buildBody(kind);
+  reflection.scale.y = -0.5;
+  reflection.y = h * 0.9;
+  reflection.alpha = 0.12;
+  reflection.filters = [reflectionBlur];
+  root.addChild(reflection);
   const { body: main } = buildBody(kind);
   root.addChild(main);
   return root;
