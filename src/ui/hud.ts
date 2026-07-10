@@ -69,8 +69,6 @@ export function buildHud(root: HTMLElement, session: GameSession, callbacks: Hud
         </div>
       </header>
 
-      <div id="zone-status" class="zone-badge" hidden></div>
-
       <footer id="hud-bottom">
         <div id="bet-group" class="hud-group">
           <span class="group-label">Bet Amount</span>
@@ -159,7 +157,6 @@ export function buildHud(root: HTMLElement, session: GameSession, callbacks: Hud
 
   const balanceEl = document.getElementById("balance")!;
   const bestWinEls = Array.from(document.querySelectorAll<HTMLElement>(".js-best-win"));
-  const zoneStatusEl = document.getElementById("zone-status")!;
   const startBtn = document.getElementById("startBtn") as HTMLButtonElement;
   const cashOutBtn = document.getElementById("cashOutBtn") as HTMLButtonElement;
   const nextMultiplierEl = document.getElementById("nextMultiplier")!;
@@ -330,14 +327,6 @@ export function buildHud(root: HTMLElement, session: GameSession, callbacks: Hud
       } else if (snap.phase !== "STEP_WON") {
         nextMultiplierEl.textContent = "";
       }
-    }
-
-    if (snap.lastOutcome && (snap.phase === "STEP_WON" || snap.phase === "DEAD")) {
-      zoneStatusEl.hidden = false;
-      zoneStatusEl.textContent = snap.lastOutcome.zone === "road" ? "ROAD" : "RIVER";
-      zoneStatusEl.className = `zone-badge ${snap.lastOutcome.zone}`;
-    } else {
-      zoneStatusEl.hidden = true;
     }
 
     turboBtn.classList.toggle("active", snap.turbo);

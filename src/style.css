@@ -202,33 +202,6 @@ button {
   fill: var(--text);
 }
 
-/* ---------- zone badge (floats under the top bar; not part of the mock spec,
-   kept for the existing road/river read-out) ---------- */
-
-.zone-badge {
-  pointer-events: none;
-  align-self: center;
-  padding: 5px 12px;
-  border-radius: 999px;
-  font-family: var(--font-display);
-  font-size: 9px;
-  letter-spacing: 0.08em;
-  background: var(--panel);
-  border: 1px solid var(--panel-border);
-  color: var(--text);
-}
-
-.zone-badge.river {
-  background: #133a63;
-  color: #bfe0ff;
-  border-color: #1e6fd9;
-}
-
-.zone-badge.road {
-  background: var(--panel);
-  color: var(--text);
-}
-
 /* ---------- toasts ---------- */
 
 #toast-host {
