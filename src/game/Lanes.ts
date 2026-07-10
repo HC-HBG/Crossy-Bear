@@ -24,9 +24,12 @@ export interface LaneField {
   lanes: LaneView[];
   totalSteps: number;
   laneX: (stepNumber: number) => number; // 0 = start bank rest position
-  updateProgress: (stepsCompleted: number) => void;
+  /** active gates the next-lane highlight/interactivity — false before a round has actually started. */
+  updateProgress: (stepsCompleted: number, active?: boolean) => void;
   /** Sinks (fades + drops) the river badge — the "log" — at the given lane. The bear "fell through" it on a river death. Restored on the next round's updateProgress(0). No-op for road lanes or lanes already sunk. */
   sinkLogAt: (stepNumber: number) => void;
+  /** Freezes that lane's vehicles (only) until the next call — the lane the bear currently stands in. Pass null to unfreeze everything. */
+  setBearLane: (stepNumber: number | null) => void;
   destroy: () => void;
 }
 
@@ -35,6 +38,8 @@ interface Ambient {
   speed: number;
   axis: "y" | "x";
   bound: number;
+  stepNumber: number;
+  freezable: boolean; // only vehicles freeze while the bear occupies their lane; decor keeps drifting
 }
 
 const badgeTextStyle = new TextStyle({
@@ -50,6 +55,21 @@ const tickTextStyle = new TextStyle({
   fontWeight: "800",
   fontFamily: "system-ui, -apple-system, sans-serif",
 });
+
+const hopHintTextStyle = new TextStyle({
+  fill: COLORS.gold,
+  fontSize: 13,
+  fontWeight: "700",
+  fontFamily: "system-ui, -apple-system, sans-serif",
+});
+
+/** "Tap to hop" — floats above the first lane's badge only, before the first hop of a round. */
+function buildHopHint(): Text {
+  const t = new Text({ text: "Tap to hop", style: hopHintTextStyle });
+  t.anchor.set(0.5, 1);
+  t.y = -46;
+  return t;
+}
 
 interface BadgeHandle {
   container: Container;
@@ -339,14 +359,14 @@ export function buildLaneField(
       for (let v = 0; v < count; v++) kinds.push(randomVehicleKind(vehicleSeed++));
       const maxLength = Math.max(...kinds.map(vehicleLength));
       const bound = LANE_DEPTH / 2 + maxLength; // fully clears the mask before it wraps
-      const speed = 0.05 + Math.random() * 0.04;
+      const speed = 0.06 + Math.random() * 0.045;
       const period = (2 * bound) / count;
       for (let v = 0; v < count; v++) {
         const vehicle = buildVehicle(kinds[v]);
         vehicle.rotation = Math.PI / 2; // always facing down
         vehicle.y = -bound + v * period;
         laneContainer.addChild(vehicle);
-        ambientEntries.push({ view: vehicle, speed, axis: "y", bound });
+        ambientEntries.push({ view: vehicle, speed, axis: "y", bound, stepNumber, freezable: true });
       }
     } else {
       laneContainer.addChild(buildRiverTexture(LANE_DEPTH));
@@ -357,7 +377,7 @@ export function buildLaneField(
         sparkle.x = -LANE_WIDTH / 2 + Math.random() * LANE_WIDTH;
         sparkle.y = -LANE_DEPTH / 2 + Math.random() * LANE_DEPTH;
         laneContainer.addChild(sparkle);
-        ambientEntries.push({ view: sparkle, speed: 0.01 + Math.random() * 0.015, axis: "y", bound: LANE_DEPTH / 2 + 10 });
+        ambientEntries.push({ view: sparkle, speed: 0.01 + Math.random() * 0.015, axis: "y", bound: LANE_DEPTH / 2 + 10, stepNumber, freezable: false });
       }
 
       // At least 2 logs visible per river lane at all times.
@@ -367,7 +387,7 @@ export function buildLaneField(
         log.x = -LANE_WIDTH / 2 + (l / logCount) * LANE_WIDTH + Math.random() * 20;
         log.y = -LANE_DEPTH / 2 + ((l + 0.5) / logCount) * LANE_DEPTH + (Math.random() - 0.5) * 30;
         laneContainer.addChild(log);
-        ambientEntries.push({ view: log, speed: 0.02 + Math.random() * 0.018, axis: "x", bound: LANE_WIDTH / 2 + 60 });
+        ambientEntries.push({ view: log, speed: 0.02 + Math.random() * 0.018, axis: "x", bound: LANE_WIDTH / 2 + 60, stepNumber, freezable: false });
         logsInLane.push(log);
       }
 
@@ -376,7 +396,7 @@ export function buildLaneField(
         pad.x = -LANE_WIDTH / 2 + 20 + Math.random() * (LANE_WIDTH - 40);
         pad.y = -LANE_DEPTH / 2 + Math.random() * LANE_DEPTH;
         laneContainer.addChild(pad);
-        ambientEntries.push({ view: pad, speed: 0.012 + Math.random() * 0.01, axis: "y", bound: LANE_DEPTH / 2 + 20 });
+        ambientEntries.push({ view: pad, speed: 0.012 + Math.random() * 0.01, axis: "y", bound: LANE_DEPTH / 2 + 20, stepNumber, freezable: false });
       }
       if (Math.random() < 0.25) {
         const stone = buildStone();
@@ -418,10 +438,16 @@ export function buildLaneField(
   let activeBadge: Container | null = null;
   let hoveredBadge: Container | null = null;
   let pulseTime = 0;
+  // The lane the bear currently occupies — its vehicles hold still until
+  // the bear hops away, so it never gets run over while just standing
+  // there deciding to hop again or cash out. Decor (logs, sparkles, lily
+  // pads) keeps drifting regardless.
+  let frozenStepNumber: number | null = null;
 
   const onTick = (): void => {
     const dt = ticker.deltaMS;
     for (const entry of ambientEntries) {
+      if (entry.freezable && entry.stepNumber === frozenStepNumber) continue;
       if (entry.axis === "y") {
         entry.view.y += entry.speed * dt;
         if (entry.view.y > entry.bound) entry.view.y = -entry.bound;
@@ -440,12 +466,13 @@ export function buildLaneField(
   };
   ticker.add(onTick);
 
-  const badgeCache = new Map<LaneView, { upcoming: Container; ring: Graphics; tick: Container }>();
+  const badgeCache = new Map<LaneView, { upcoming: Container; ring: Graphics; tick: Container; hint: Text | null }>();
   // Lanes whose river badge has sunk (the bear died on that exact log) this
   // round. A fresh round (stepsCompleted === 0) restores every sunk badge —
   // the board persists, but the ladder itself resets each round.
   const sunkLanes = new Set<number>();
-  function updateProgress(stepsCompleted: number): void {
+  /** active gates the next-lane highlight/interactivity — false before a round has actually started (e.g. the initial board-load call, or a difficulty switch while idle). */
+  function updateProgress(stepsCompleted: number, active = false): void {
     if (stepsCompleted === 0 && sunkLanes.size > 0) {
       for (const stepNumber of sunkLanes) {
         const entry = badgeCache.get(lanes[stepNumber - 1]);
@@ -482,7 +509,11 @@ export function buildLaneField(
         built.container.on("pointerout", () => {
           if (hoveredBadge === built.container) hoveredBadge = null;
         });
-        entry = { upcoming: built.container, ring: built.ring, tick };
+        // Onboarding nudge, first lane only — points at the very first badge
+        // a new player needs to tap.
+        const hint = lane.stepNumber === 1 ? buildHopHint() : null;
+        if (hint) lane.label.addChild(hint);
+        entry = { upcoming: built.container, ring: built.ring, tick, hint };
         badgeCache.set(lane, entry);
       }
       const aheadBy = lane.stepNumber - stepsCompleted;
@@ -498,15 +529,17 @@ export function buildLaneField(
         entry.upcoming.visible = !lane.resolved && aheadBy <= UPCOMING_WINDOW;
       }
 
-      // Only the next lane's badge is ever interactive: gold ring + pulse,
-      // full brightness, and a real hit target. Lanes beyond it are dimmed
-      // and structurally non-interactive (eventMode "none" — Pixi never
-      // dispatches pointer events to them, so clicking one is a no-op at
-      // the badge level; a tap still resolves the *next* step, same as
+      // Only the next lane's badge is ever interactive, and only once a
+      // round is actually active: gold ring + pulse, full brightness, and a
+      // real hit target. Lanes beyond it (or every lane, before Start) are
+      // dimmed and structurally non-interactive (eventMode "none" — Pixi
+      // never dispatches pointer events to them, so clicking one is a no-op
+      // at the badge level; a tap still resolves the *next* step, same as
       // tapping any other empty patch of board, via the board-wide input).
-      const isActive = lane.stepNumber === activeStepNumber && entry.upcoming.visible;
+      const isActive = active && lane.stepNumber === activeStepNumber && entry.upcoming.visible;
       entry.ring.visible = isActive;
       entry.upcoming.alpha = isActive || lane.resolved ? 1 : 0.55;
+      if (entry.hint) entry.hint.visible = isActive;
       if (isActive) {
         entry.upcoming.eventMode = "static";
         entry.upcoming.cursor = "pointer";
@@ -554,6 +587,9 @@ export function buildLaneField(
     laneX: (stepNumber) => (stepNumber <= 0 ? -22 : laneCenterX(stepNumber)),
     updateProgress,
     sinkLogAt,
+    setBearLane: (stepNumber) => {
+      frozenStepNumber = stepNumber;
+    },
     destroy: () => {
       ticker.remove(onTick);
       container.destroy({ children: true });

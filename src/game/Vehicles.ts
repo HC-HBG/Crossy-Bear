@@ -39,7 +39,7 @@ const RAW_DIMS: Record<VehicleKind, Dims> = {
 // Target on-screen body width (perpendicular to travel) once scaled —
 // chunkier than the original unscaled art, but well short of the lane's
 // full width so cars read as sized objects, not dominant blocks.
-const TARGET_BODY_WIDTH = LANE_WIDTH * 0.38;
+const TARGET_BODY_WIDTH = LANE_WIDTH * 0.3;
 
 /** Uniform scale factor that brings this kind's body width to TARGET_BODY_WIDTH. */
 export function vehicleScale(kind: VehicleKind): number {
