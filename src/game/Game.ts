@@ -11,6 +11,9 @@ const HOP_MS = 220;
 const DEATH_MS = 320;
 const CASHOUT_MS = 420;
 const TURBO_MS = 40;
+// Fraction of the viewport width where the bear sits horizontally, so more
+// screen shows lanes ahead than behind (~5 lanes ahead at typical widths).
+const CAMERA_ANCHOR = 0.35;
 
 export class Game {
   readonly app: Application;
@@ -68,17 +71,32 @@ export class Game {
     }
   }
 
-  /** Available vertical room for the lane strip between the HUD header and footer. */
+  /**
+   * The board's vertical band, measured from the actual rendered HUD bars
+   * (not a fixed heuristic) so it fills edge to edge between them with no
+   * dead navy margin above/below, at any viewport size or breakpoint.
+   */
+  private boardBounds(): { top: number; height: number } {
+    const screenH = this.app.screen.height;
+    const topBar = document.getElementById("hud-top");
+    const bottomBar = document.getElementById("hud-bottom");
+    const top = topBar ? topBar.getBoundingClientRect().bottom : 60;
+    const bottom = bottomBar ? bottomBar.getBoundingClientRect().top : screenH - 120;
+    const height = Math.max(160, bottom - top);
+    return { top, height };
+  }
+
   private laneDepth(): number {
-    return Math.max(220, Math.min(480, this.app.screen.height - 170));
+    return this.boardBounds().height;
   }
 
   private worldY(): number {
-    return this.app.screen.height / 2;
+    const { top, height } = this.boardBounds();
+    return top + height / 2;
   }
 
   private onTick = (): void => {
-    const desiredCameraX = -(this.bear.view.x - this.app.screen.width * 0.35);
+    const desiredCameraX = -(this.bear.view.x - this.app.screen.width * CAMERA_ANCHOR);
     const lerp = Math.min(1, this.app.ticker.deltaMS / 160);
     this.cameraX += (desiredCameraX - this.cameraX) * lerp;
     this.world.x = this.cameraX;
@@ -169,10 +187,10 @@ export class Game {
 
   private startNewRound(snap: SessionSnapshot): void {
     this.laneField?.destroy();
-    this.laneField = buildLaneField(snap.difficulty, this.app.ticker, this.laneDepth());
+    this.laneField = buildLaneField(snap.difficulty, this.app.ticker, this.laneDepth(), this.app.screen.width);
     this.world.addChildAt(this.laneField.container, 0);
     this.bear.reset(this.laneField.laneX(0));
-    this.cameraX = -(this.bear.view.x - this.app.screen.width * 0.35);
+    this.cameraX = -(this.bear.view.x - this.app.screen.width * CAMERA_ANCHOR);
     this.world.x = this.cameraX;
     this.world.y = this.worldY();
     this.lastStepsCompleted = 0;
@@ -183,8 +201,7 @@ export class Game {
     const stepNumber = snap.stepsCompleted;
     const targetX = this.laneField.laneX(stepNumber);
     await this.bear.hopTo(targetX, this.duration(HOP_MS, snap));
-    const lane = this.laneField.lanes[stepNumber - 1];
-    if (lane) lane.resolved = true;
+    this.laneField.updateProgress(stepNumber);
   }
 
   private async animateDeath(snap: SessionSnapshot): Promise<void> {
