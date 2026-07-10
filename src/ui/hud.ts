@@ -150,7 +150,6 @@ export function buildHud(root: HTMLElement, session: GameSession, callbacks: Hud
     </div>
   `;
 
-  const canvasHost = document.getElementById("canvas-host") as HTMLElement;
   const hud = document.getElementById("hud") as HTMLElement;
   const toasts = new ToastHost(hud);
   const paytable = new PaytablePanel(root);
@@ -234,7 +233,10 @@ export function buildHud(root: HTMLElement, session: GameSession, callbacks: Hud
 
   startBtn.addEventListener("click", () => callbacks.onPrimaryInput());
   cashOutBtn.addEventListener("click", () => void session.cashOut());
-  canvasHost.addEventListener("pointerdown", () => callbacks.onPrimaryInput());
+  // Tap-anywhere-on-board input is handled by Pixi's own event system
+  // (Game.ts's stage-level pointerdown), not a parallel DOM listener here —
+  // that split let a single click on an interactive canvas object (like a
+  // hop badge) dispatch two independent, unsynchronized hops.
 
   turboBtn.addEventListener("click", () => session.toggleTurbo());
   muteBtn.addEventListener("click", () => session.toggleMuted());
@@ -314,7 +316,7 @@ export function buildHud(root: HTMLElement, session: GameSession, callbacks: Hud
       const weight = 1 + Math.min(0.55, Math.log10(Math.max(1, snap.lastOutcome.multiplier)) * 0.4);
       cashOutBtn.style.setProperty("--weight", String(weight));
       if (snap.lastOutcome.nextMultiplier !== null) {
-        nextMultiplierEl.textContent = `Next: ${formatMultiplier(snap.lastOutcome.multiplier)} → ${formatMultiplier(snap.lastOutcome.nextMultiplier)}`;
+        nextMultiplierEl.textContent = `Tap ${formatMultiplier(snap.lastOutcome.nextMultiplier)} to hop`;
       } else {
         nextMultiplierEl.textContent = "";
       }
@@ -323,7 +325,7 @@ export function buildHud(root: HTMLElement, session: GameSession, callbacks: Hud
       cashOutBtn.style.setProperty("--weight", "1");
       if (snap.phase === "ROUND_ACTIVE") {
         const firstMultiplier = MathEngine.tableFor(snap.difficulty)[0];
-        nextMultiplierEl.textContent = `Tap to hop — ${formatMultiplier(firstMultiplier)} on step 1`;
+        nextMultiplierEl.textContent = `Tap ${formatMultiplier(firstMultiplier)} to hop`;
       } else if (snap.phase !== "STEP_WON") {
         nextMultiplierEl.textContent = "";
       }

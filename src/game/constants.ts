@@ -34,3 +34,13 @@ export const VEHICLE_COLORS = {
 
 export const LANE_WIDTH = 160;
 export const LANE_DEPTH = 480; // z-depth (screen-space footprint) of a lane strip
+
+/**
+ * The single source of truth for a lane's horizontal center. Vehicle travel
+ * paths, the bear's hop destination, and the multiplier badge all derive
+ * their x from this — never computed independently — so they can never
+ * drift out of alignment with each other.
+ */
+export function laneCenterX(stepNumber: number): number {
+  return (stepNumber - 0.5) * LANE_WIDTH;
+}

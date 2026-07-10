@@ -41,6 +41,18 @@ export class Game {
     this.boardMask = new Graphics();
     app.stage.addChild(this.boardMask);
     this.world.mask = this.boardMask;
+    // Tap-anywhere-on-board input lives on the stage itself (not a parallel
+    // DOM listener on canvasHost) so it and the active badge's own
+    // pointerdown share one synchronous Pixi event dispatch: a click that
+    // lands on the badge triggers only the badge's handler (which stops
+    // propagation), everything else falls through to this stage-wide
+    // fallback. A DOM listener firing independently of Pixi's own event
+    // queue can't be synchronized against it, which previously let a single
+    // click commit two steps (the DOM path resolving one hop fully before
+    // Pixi's own dispatch fired the second).
+    app.stage.eventMode = "static";
+    app.stage.hitArea = app.screen;
+    app.stage.on("pointerdown", () => this.onPrimaryInput());
     this.bear = new Bear(app.ticker, bearTextures);
     this.world.addChild(this.bear.view);
     // Board is visible immediately on load — never a blank/navy screen
@@ -74,6 +86,17 @@ export class Game {
     } else if (this.session.canStart()) {
       void this.session.startRound();
     }
+  }
+
+  /**
+   * Tapping the active (next-lane) badge is a dedicated hop trigger — unlike
+   * onPrimaryInput, it never falls back to starting a round, since a badge
+   * only ever renders once a round is already active. Routes through the
+   * exact same session.hop() phase guard as every other input, so it's
+   * always safe to fire alongside a board-wide tap on the same click.
+   */
+  private onHopBadgeClick(): void {
+    void this.session.hop();
   }
 
   /**
@@ -208,7 +231,13 @@ export class Game {
     if (this.laneField && this.laneFieldDifficulty === difficulty) return;
     this.laneFieldDifficulty = difficulty;
     this.laneField?.destroy();
-    this.laneField = buildLaneField(difficulty, this.app.ticker, this.laneDepth(), this.app.screen.width);
+    this.laneField = buildLaneField(
+      difficulty,
+      this.app.ticker,
+      this.laneDepth(),
+      this.app.screen.width,
+      () => this.onHopBadgeClick(),
+    );
     this.world.addChildAt(this.laneField.container, 0);
     this.bear.reset(this.laneField.laneX(0));
     this.cameraX = -(this.bear.view.x - this.app.screen.width * CAMERA_ANCHOR);
@@ -289,10 +318,11 @@ export class Game {
 
   private async spawnHitVehicleArrive(targetX: number, arrivalMs: number): Promise<Container> {
     const vehicle = buildVehicle(randomVehicleKind(this.hitVehicleSeed++));
+    // Always facing down, always arriving from above — matches the ambient
+    // lane traffic's top-to-bottom-only rule, no exceptions.
     vehicle.rotation = Math.PI / 2;
     const depth = this.laneDepth();
-    const fromTop = Math.random() < 0.5;
-    const startY = fromTop ? -depth / 2 - 70 : depth / 2 + 70;
+    const startY = -depth / 2 - 70;
     vehicle.x = targetX;
     vehicle.y = startY;
     this.world.addChild(vehicle);
@@ -303,9 +333,10 @@ export class Game {
   }
 
   private async driveVehicleOff(vehicle: Container): Promise<void> {
-    const direction = Math.random() < 0.5 ? -1 : 1;
+    // Continues downward after the hit, same direction it arrived from
+    // (vehicle.y is ~0 at the start of this tween, where it hit the bear).
     await tween(this.app.ticker, 260, (t) => {
-      vehicle.y = direction * t * 260;
+      vehicle.y = t * 260;
       vehicle.alpha = 1 - t * 0.5;
     });
     vehicle.destroy();

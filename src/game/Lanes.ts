@@ -1,12 +1,13 @@
-import { Container, Graphics, Text, TextStyle, Ticker } from "pixi.js";
-import { COLORS, LANE_WIDTH } from "./constants";
+import { Container, Graphics, Rectangle, Text, TextStyle, Ticker } from "pixi.js";
+import { COLORS, LANE_WIDTH, laneCenterX } from "./constants";
 import { DIFFICULTIES, buildMultiplierTable, zoneForStep, type Difficulty, type Zone } from "../engine/mathEngine";
-import { buildVehicle, randomVehicleKind } from "./Vehicles";
+import { buildVehicle, randomVehicleKind, vehicleLength, type VehicleKind } from "./Vehicles";
 import { formatMultiplier } from "../format";
 import { tween } from "./tween";
 
 const KERB_WIDTH = 24;
 const UPCOMING_WINDOW = 4;
+const MIN_HIT_SIZE = 56;
 
 export interface LaneView {
   stepNumber: number; // 1-based
@@ -50,7 +51,19 @@ const tickTextStyle = new TextStyle({
   fontFamily: "system-ui, -apple-system, sans-serif",
 });
 
-function buildRoadBadge(multiplier: number): Container {
+interface BadgeHandle {
+  container: Container;
+  ring: Graphics;
+}
+
+/** Hit area is always at least MIN_HIT_SIZE square, centered on the badge, regardless of its visual footprint. */
+function applyHitArea(c: Container, visualW: number, visualH: number): void {
+  const w = Math.max(MIN_HIT_SIZE, visualW);
+  const h = Math.max(MIN_HIT_SIZE, visualH);
+  c.hitArea = new Rectangle(-w / 2, -h / 2, w, h);
+}
+
+function buildRoadBadge(multiplier: number): BadgeHandle {
   const c = new Container();
   const text = new Text({ text: formatMultiplier(multiplier), style: badgeTextStyle });
   text.anchor.set(0.5);
@@ -58,11 +71,15 @@ function buildRoadBadge(multiplier: number): Container {
   const g = new Graphics();
   g.circle(0, 0, r).fill({ color: COLORS.badgeFill, alpha: 0.85 });
   g.circle(0, 0, r).stroke({ width: 1, color: COLORS.badgeRim });
-  c.addChild(g, text);
-  return c;
+  const ring = new Graphics();
+  ring.circle(0, 0, r + 4).stroke({ width: 3, color: COLORS.gold });
+  ring.visible = false;
+  c.addChild(g, ring, text);
+  applyHitArea(c, r * 2, r * 2);
+  return { container: c, ring };
 }
 
-function buildRiverBadge(multiplier: number): Container {
+function buildRiverBadge(multiplier: number): BadgeHandle {
   const c = new Container();
   const text = new Text({ text: formatMultiplier(multiplier), style: badgeTextStyle });
   text.anchor.set(0.5);
@@ -72,8 +89,12 @@ function buildRiverBadge(multiplier: number): Container {
   g.roundRect(-w / 2, -h / 2, w, h, 5).fill(COLORS.woodBadge);
   g.roundRect(-w / 2, -h / 2, w, h, 5).stroke({ width: 2, color: COLORS.woodBadgeDark });
   g.rect(-w / 2 + 5, -2, w - 10, 2).fill({ color: COLORS.woodBadgeDark, alpha: 0.5 });
-  c.addChild(g, text);
-  return c;
+  const ring = new Graphics();
+  ring.roundRect(-w / 2 - 4, -h / 2 - 4, w + 8, h + 8, 7).stroke({ width: 3, color: COLORS.gold });
+  ring.visible = false;
+  c.addChild(g, ring, text);
+  applyHitArea(c, w, h);
+  return { container: c, ring };
 }
 
 function buildLadderTick(): Container {
@@ -211,8 +232,24 @@ function buildFroth(depth: number): Graphics {
 function buildRoadTexture(depth: number): Graphics {
   const g = new Graphics();
   g.rect(-LANE_WIDTH / 2, -depth / 2, LANE_WIDTH, depth).fill(COLORS.road);
-  for (let y = -depth / 2 + 16; y < depth / 2; y += 44) {
-    g.rect(-4, y, 8, 26).fill(COLORS.roadDivider);
+  return g;
+}
+
+/**
+ * Dashed lane-boundary marking, drawn at a shared edge between two adjacent
+ * road lanes (positioned via .x at the call site) — NOT down the lane's own
+ * centre. Vehicles, the bear's hop target, and badges all sit at the lane
+ * centre (see laneCenterX), so the open, markings-free middle of the lane is
+ * the drivable/hoppable path; the dash marks where one lane ends and the
+ * next begins, same as a real road.
+ */
+function buildLaneDivider(depth: number): Graphics {
+  const g = new Graphics();
+  const dashLen = 26;
+  const gapLen = 18;
+  const dashW = 4;
+  for (let y = -depth / 2 + 10; y < depth / 2; y += dashLen + gapLen) {
+    g.rect(-dashW / 2, y, dashW, dashLen).fill(COLORS.roadDivider);
   }
   return g;
 }
@@ -227,7 +264,13 @@ function buildRiverTexture(depth: number): Graphics {
   return g;
 }
 
-export function buildLaneField(difficulty: Difficulty, ticker: Ticker, laneDepth: number, viewportWidth = 0): LaneField {
+export function buildLaneField(
+  difficulty: Difficulty,
+  ticker: Ticker,
+  laneDepth: number,
+  viewportWidth = 0,
+  onHopBadgeClick: () => void = () => {},
+): LaneField {
   const def = DIFFICULTIES[difficulty];
   const table = buildMultiplierTable(def);
   const n = table.length;
@@ -251,9 +294,8 @@ export function buildLaneField(difficulty: Difficulty, ticker: Ticker, laneDepth
   for (let i = 0; i < n; i++) {
     const stepNumber = i + 1;
     const zone = zoneForStep(def, i);
-    const centerX = (stepNumber - 0.5) * LANE_WIDTH;
     const laneContainer = new Container();
-    laneContainer.x = centerX;
+    laneContainer.x = laneCenterX(stepNumber);
 
     // Kerb (and river froth) are built now but added to laneContainer *after*
     // its own road/river texture below, so they render on top of it — and,
@@ -263,6 +305,7 @@ export function buildLaneField(difficulty: Difficulty, ticker: Ticker, laneDepth
     // to be added last.
     let kerbToAdd: Graphics | null = null;
     let frothToAdd: Graphics | null = null;
+    let dividerToAdd: Graphics | null = null;
     if (zone !== prevZone) {
       kerbToAdd = buildKerbStrip(LANE_DEPTH);
       kerbToAdd.x = -LANE_WIDTH / 2;
@@ -274,6 +317,11 @@ export function buildLaneField(difficulty: Difficulty, ticker: Ticker, laneDepth
         frothToAdd = buildFroth(LANE_DEPTH);
         frothToAdd.x = -LANE_WIDTH / 2 - FROTH_WIDTH;
       }
+    } else if (zone === "road") {
+      // Internal road-to-road boundary (not a zone transition, which already
+      // gets a kerb) — mark it with a dashed line at the shared edge.
+      dividerToAdd = buildLaneDivider(LANE_DEPTH);
+      dividerToAdd.x = -LANE_WIDTH / 2;
     }
     prevZone = zone;
 
@@ -282,17 +330,23 @@ export function buildLaneField(difficulty: Difficulty, ticker: Ticker, laneDepth
     if (zone === "road") {
       laneContainer.addChild(buildRoadTexture(LANE_DEPTH));
 
-      // All traffic in a lane travels the same way, like a real lane —
-      // direction is chosen once per lane, not per vehicle.
-      const laneDirection = Math.random() < 0.5 ? 1 : -1;
+      // ALL traffic travels top -> bottom, every lane, no exceptions.
+      // Vehicles in the same lane share one speed so their spacing (evenly
+      // distributed across the full wrap cycle) never drifts and they can
+      // never overlap, however large they're scaled.
       const count = 1 + (i % 2);
+      const kinds: VehicleKind[] = [];
+      for (let v = 0; v < count; v++) kinds.push(randomVehicleKind(vehicleSeed++));
+      const maxLength = Math.max(...kinds.map(vehicleLength));
+      const bound = LANE_DEPTH / 2 + maxLength; // fully clears the mask before it wraps
+      const speed = 0.05 + Math.random() * 0.04;
+      const period = (2 * bound) / count;
       for (let v = 0; v < count; v++) {
-        const vehicle = buildVehicle(randomVehicleKind(vehicleSeed++));
-        vehicle.rotation = laneDirection > 0 ? Math.PI / 2 : -Math.PI / 2;
-        vehicle.y = -LANE_DEPTH / 2 + Math.random() * LANE_DEPTH;
-        const speed = (0.04 + Math.random() * 0.05) * laneDirection;
+        const vehicle = buildVehicle(kinds[v]);
+        vehicle.rotation = Math.PI / 2; // always facing down
+        vehicle.y = -bound + v * period;
         laneContainer.addChild(vehicle);
-        ambientEntries.push({ view: vehicle, speed, axis: "y", bound: LANE_DEPTH / 2 + 40 });
+        ambientEntries.push({ view: vehicle, speed, axis: "y", bound });
       }
     } else {
       laneContainer.addChild(buildRiverTexture(LANE_DEPTH));
@@ -334,6 +388,7 @@ export function buildLaneField(difficulty: Difficulty, ticker: Ticker, laneDepth
 
     if (kerbToAdd) laneContainer.addChild(kerbToAdd);
     if (frothToAdd) laneContainer.addChild(frothToAdd);
+    if (dividerToAdd) laneContainer.addChild(dividerToAdd);
 
     const badgeSlot = new Container();
     badgeSlot.y = 0;
@@ -356,6 +411,14 @@ export function buildLaneField(difficulty: Difficulty, ticker: Ticker, laneDepth
   farBank.x = n * LANE_WIDTH;
   container.addChild(farBank);
 
+  // The single active (next-to-resolve) badge — pulses continuously and
+  // pops further on hover. Reassigned by updateProgress() as the ladder
+  // advances; hover state is tracked per-badge but only ever matters while
+  // that badge is the active (eventMode "static") one.
+  let activeBadge: Container | null = null;
+  let hoveredBadge: Container | null = null;
+  let pulseTime = 0;
+
   const onTick = (): void => {
     const dt = ticker.deltaMS;
     for (const entry of ambientEntries) {
@@ -368,10 +431,16 @@ export function buildLaneField(difficulty: Difficulty, ticker: Ticker, laneDepth
         if (entry.view.x > entry.bound) entry.view.x = -entry.bound;
       }
     }
+    if (activeBadge) {
+      pulseTime += dt;
+      const base = activeBadge === hoveredBadge ? 1.1 : 1;
+      const wobble = Math.sin(pulseTime / 260) * 0.06;
+      activeBadge.scale.set(base + wobble);
+    }
   };
   ticker.add(onTick);
 
-  const badgeCache = new Map<LaneView, { upcoming: Container; tick: Container }>();
+  const badgeCache = new Map<LaneView, { upcoming: Container; ring: Graphics; tick: Container }>();
   // Lanes whose river badge has sunk (the bear died on that exact log) this
   // round. A fresh round (stepsCompleted === 0) restores every sunk badge —
   // the board persists, but the ladder itself resets each round.
@@ -388,15 +457,32 @@ export function buildLaneField(difficulty: Difficulty, ticker: Ticker, laneDepth
       }
       sunkLanes.clear();
     }
+    const activeStepNumber = stepsCompleted + 1;
+    activeBadge = null;
     for (const lane of lanes) {
       let entry = badgeCache.get(lane);
       if (!entry) {
-        const upcoming = lane.zone === "road" ? buildRoadBadge(lane.multiplier) : buildRiverBadge(lane.multiplier);
-        upcoming.y = lane.zone === "road" ? -LANE_DEPTH / 2 + 34 : 0;
+        const built = lane.zone === "road" ? buildRoadBadge(lane.multiplier) : buildRiverBadge(lane.multiplier);
+        // Bear's row, every zone — the badge is what the bear hops onto,
+        // so it must sit exactly where the bear lands (see laneCenterX/laneX).
+        built.container.y = 0;
         const tick = buildLadderTick();
-        tick.y = -LANE_DEPTH / 2 + 34;
-        lane.label.addChild(upcoming, tick);
-        entry = { upcoming, tick };
+        tick.y = 0;
+        lane.label.addChild(built.container, tick);
+        built.container.on("pointerdown", (e) => {
+          // Stops this click from also reaching the stage's tap-anywhere
+          // fallback — badge and board-tap are equivalent inputs, but a
+          // single click must resolve exactly one step, not two.
+          e.stopPropagation();
+          onHopBadgeClick();
+        });
+        built.container.on("pointerover", () => {
+          hoveredBadge = built.container;
+        });
+        built.container.on("pointerout", () => {
+          if (hoveredBadge === built.container) hoveredBadge = null;
+        });
+        entry = { upcoming: built.container, ring: built.ring, tick };
         badgeCache.set(lane, entry);
       }
       const aheadBy = lane.stepNumber - stepsCompleted;
@@ -410,6 +496,30 @@ export function buildLaneField(difficulty: Difficulty, ticker: Ticker, laneDepth
       } else {
         entry.tick.visible = lane.resolved;
         entry.upcoming.visible = !lane.resolved && aheadBy <= UPCOMING_WINDOW;
+      }
+
+      // Only the next lane's badge is ever interactive: gold ring + pulse,
+      // full brightness, and a real hit target. Lanes beyond it are dimmed
+      // and structurally non-interactive (eventMode "none" — Pixi never
+      // dispatches pointer events to them, so clicking one is a no-op at
+      // the badge level; a tap still resolves the *next* step, same as
+      // tapping any other empty patch of board, via the board-wide input).
+      const isActive = lane.stepNumber === activeStepNumber && entry.upcoming.visible;
+      entry.ring.visible = isActive;
+      entry.upcoming.alpha = isActive || lane.resolved ? 1 : 0.55;
+      if (isActive) {
+        entry.upcoming.eventMode = "static";
+        entry.upcoming.cursor = "pointer";
+        activeBadge = entry.upcoming;
+      } else {
+        entry.upcoming.eventMode = "none";
+        entry.upcoming.cursor = "default";
+        if (entry.upcoming.scale.x !== 1 || entry.upcoming.scale.y !== 1) {
+          // Reset a badge that just lost active status (e.g. right after a
+          // hop) back to rest scale — the pulse only touches activeBadge,
+          // so the previous one would otherwise stay stuck mid-wobble.
+          entry.upcoming.scale.set(1);
+        }
       }
     }
   }
@@ -441,7 +551,7 @@ export function buildLaneField(difficulty: Difficulty, ticker: Ticker, laneDepth
     container,
     lanes,
     totalSteps: n,
-    laneX: (stepNumber) => (stepNumber <= 0 ? -22 : (stepNumber - 0.5) * LANE_WIDTH),
+    laneX: (stepNumber) => (stepNumber <= 0 ? -22 : laneCenterX(stepNumber)),
     updateProgress,
     sinkLogAt,
     destroy: () => {
