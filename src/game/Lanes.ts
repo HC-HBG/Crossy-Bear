@@ -24,7 +24,7 @@ export interface LaneField {
   totalSteps: number;
   laneX: (stepNumber: number) => number; // 0 = start bank rest position
   updateProgress: (stepsCompleted: number) => void;
-  /** Sinks (fades + drops) the river badge — the "log" — at the given lane. The bear "fell through" it on a river death. No-op for road lanes or lanes already sunk. */
+  /** Sinks (fades + drops) the river badge — the "log" — at the given lane. The bear "fell through" it on a river death. Restored on the next round's updateProgress(0). No-op for road lanes or lanes already sunk. */
   sinkLogAt: (stepNumber: number) => void;
   destroy: () => void;
 }
@@ -372,11 +372,22 @@ export function buildLaneField(difficulty: Difficulty, ticker: Ticker, laneDepth
   ticker.add(onTick);
 
   const badgeCache = new Map<LaneView, { upcoming: Container; tick: Container }>();
-  // Lanes whose river badge has sunk (the bear died on that exact log) — the
-  // board persists across rounds, so this must survive updateProgress resets
-  // and permanently keep that one badge hidden without touching any other lane.
+  // Lanes whose river badge has sunk (the bear died on that exact log) this
+  // round. A fresh round (stepsCompleted === 0) restores every sunk badge —
+  // the board persists, but the ladder itself resets each round.
   const sunkLanes = new Set<number>();
   function updateProgress(stepsCompleted: number): void {
+    if (stepsCompleted === 0 && sunkLanes.size > 0) {
+      for (const stepNumber of sunkLanes) {
+        const entry = badgeCache.get(lanes[stepNumber - 1]);
+        if (entry) {
+          entry.upcoming.y = 0;
+          entry.upcoming.alpha = 1;
+          entry.upcoming.scale.set(1);
+        }
+      }
+      sunkLanes.clear();
+    }
     for (const lane of lanes) {
       let entry = badgeCache.get(lane);
       if (!entry) {
@@ -414,11 +425,15 @@ export function buildLaneField(difficulty: Difficulty, ticker: Ticker, laneDepth
     const badge = entry.upcoming;
     const startY = badge.y;
     void tween(ticker, 420, (t) => {
+      // A new round can reset sunkLanes while this tween is still in flight
+      // (its own animation frames keep firing after that reset) — bail out
+      // rather than clobbering the reset transform on this lane's badge.
+      if (!sunkLanes.has(stepNumber)) return;
       badge.y = startY + t * 26;
       badge.alpha = 1 - t;
       badge.scale.set(1 - t * 0.5);
     }).then(() => {
-      badge.visible = false;
+      if (sunkLanes.has(stepNumber)) badge.visible = false;
     });
   }
 
