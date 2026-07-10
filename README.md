@@ -11,6 +11,13 @@ supplied source art); everything else on screen — vehicles, road, river,
 lanes, coin fountain — is still code-generated Pixi `Graphics`, no image
 files. All audio is synthesised with WebAudio — no audio files.
 
+The HUD (the DOM/CSS chrome above and below the Pixi canvas — top bar,
+bet/difficulty/action bar, menu drawer, paytable) is plain HTML/CSS built by
+`src/ui/hud.ts`, styled against a small dark/gold/purple palette with the
+"Press Start 2P" pixel display font (Google Fonts, `monospace` fallback) for
+logos, numbers, and buttons. The coin icon is an inline SVG `<symbol>`, no
+image file.
+
 ## Running it
 
 ```bash
@@ -128,7 +135,7 @@ src/
     simulate.ts     Monte Carlo self-test (node-runnable via `npm run simulate`)
   state.ts          explicit round/session state machine (see below)
   game/             Pixi scene: lanes, camera, bear, vehicles, river, celebrations
-  ui/               HUD: bet panel, difficulty picker, cash-out, paytable, toasts
+  ui/               HUD: top bar, bet/difficulty/action bar, menu drawer, paytable, toasts
   audio/            WebAudio synth (hop, death, coin cascade, tension layer)
   main.ts           bootstrap: URL params, session, HUD, Pixi scene, audio
 ```
@@ -197,7 +204,7 @@ This is a concept/UX demo, not a production game. Deliberately not included:
   round resolves, independent of the animation still playing). Turbo mode
   drops step-resolve tweens from ~220ms to ~40ms. ✅
 - Cash Out always shows a currency amount; the next-step multiplier is
-  always visible alongside it (e.g. "1.10x now → 1.26x next" on Medium). ✅
+  always visible alongside it (e.g. "Next: 1.10x → 1.26x" on Medium). ✅
 - No timing/skill influence on outcomes; `?rig=win` / `?rig=lose` reliably
   demo both outcomes. ✅
 - No "score"/"skill" language anywhere in the UI (grep-verified). ✅

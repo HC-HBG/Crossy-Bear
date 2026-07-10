@@ -30,8 +30,10 @@ export class PaytablePanel {
     header.className = "paytable-header";
     header.innerHTML = `<span>Paytable</span>`;
     const closeBtn = document.createElement("button");
+    closeBtn.type = "button";
     closeBtn.className = "icon-toggle";
     closeBtn.textContent = "✕";
+    closeBtn.setAttribute("aria-label", "Close paytable");
     closeBtn.addEventListener("click", () => this.hide());
     header.appendChild(closeBtn);
     this.el.appendChild(header);
@@ -40,6 +42,7 @@ export class PaytablePanel {
     tabRow.className = "paytable-tabs";
     for (const def of Object.values(DIFFICULTIES)) {
       const btn = document.createElement("button");
+      btn.type = "button";
       btn.textContent = def.label;
       btn.addEventListener("click", () => this.setDifficulty(def.id));
       tabRow.appendChild(btn);
