@@ -21,6 +21,7 @@ export class Game {
   private world: Container;
   private boardMask: Graphics;
   private laneField: LaneField | null = null;
+  private laneFieldDifficulty: SessionSnapshot["difficulty"] | null = null;
   private bear: Bear;
   private cameraX = 0;
   private lastPhase: Phase = "IDLE";
@@ -42,6 +43,9 @@ export class Game {
     this.world.mask = this.boardMask;
     this.bear = new Bear(app.ticker, bearTextures);
     this.world.addChild(this.bear.view);
+    // Board is visible immediately on load — never a blank/navy screen
+    // waiting for Start — matching whatever difficulty is pre-selected.
+    this.ensureLaneField(session.snapshot().difficulty);
     app.ticker.add(this.onTick);
     session.subscribe((snap) => this.handleSnapshot(snap));
   }
@@ -164,6 +168,7 @@ export class Game {
     if (snap.difficulty !== this.lastDifficulty) {
       this.lastDifficulty = snap.difficulty;
       this.bear.setSkin(snap.difficulty === "daredevil" ? "daredevil" : "default");
+      this.ensureLaneField(snap.difficulty);
     }
 
     const isNewRound =
@@ -191,11 +196,32 @@ export class Game {
     this.lastPhase = snap.phase;
   }
 
-  private startNewRound(snap: SessionSnapshot): void {
+  /**
+   * Builds the board once per difficulty and keeps reusing it — a fresh
+   * round only resets the ladder's resolved/upcoming badges via
+   * updateProgress(0), it doesn't tear down and rebuild the scene. That
+   * keeps the environment on screen at all times (no blank load, no
+   * re-randomized decorations popping between rounds) and is what makes
+   * river logs stay put instead of jumping to new positions every round.
+   */
+  private ensureLaneField(difficulty: SessionSnapshot["difficulty"]): void {
+    if (this.laneField && this.laneFieldDifficulty === difficulty) return;
+    this.laneFieldDifficulty = difficulty;
     this.laneField?.destroy();
-    this.laneField = buildLaneField(snap.difficulty, this.app.ticker, this.laneDepth(), this.app.screen.width);
+    this.laneField = buildLaneField(difficulty, this.app.ticker, this.laneDepth(), this.app.screen.width);
     this.world.addChildAt(this.laneField.container, 0);
     this.bear.reset(this.laneField.laneX(0));
+    this.cameraX = -(this.bear.view.x - this.app.screen.width * CAMERA_ANCHOR);
+    this.world.x = this.cameraX;
+    this.world.y = this.worldY();
+  }
+
+  private startNewRound(snap: SessionSnapshot): void {
+    this.ensureLaneField(snap.difficulty);
+    const laneField = this.laneField;
+    if (!laneField) return;
+    laneField.updateProgress(0);
+    this.bear.reset(laneField.laneX(0));
     this.cameraX = -(this.bear.view.x - this.app.screen.width * CAMERA_ANCHOR);
     this.world.x = this.cameraX;
     this.world.y = this.worldY();
@@ -223,6 +249,7 @@ export class Game {
       void this.driveVehicleOff(vehicle);
     } else {
       this.spawnSplashRipples(targetX);
+      this.laneField.sinkLogAt(outcome.stepNumber);
       await this.bear.dieSplash(this.duration(DEATH_MS, snap));
     }
   }

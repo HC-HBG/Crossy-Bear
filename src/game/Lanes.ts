@@ -3,6 +3,7 @@ import { COLORS, LANE_WIDTH } from "./constants";
 import { DIFFICULTIES, buildMultiplierTable, zoneForStep, type Difficulty, type Zone } from "../engine/mathEngine";
 import { buildVehicle, randomVehicleKind } from "./Vehicles";
 import { formatMultiplier } from "../format";
+import { tween } from "./tween";
 
 const KERB_WIDTH = 24;
 const UPCOMING_WINDOW = 4;
@@ -14,6 +15,7 @@ export interface LaneView {
   label: Container; // whichever of {badge, tick} is currently visible — Game.ts edge-fades this
   multiplier: number;
   resolved: boolean;
+  logs: Graphics[]; // river lanes only; empty for road lanes
 }
 
 export interface LaneField {
@@ -22,6 +24,8 @@ export interface LaneField {
   totalSteps: number;
   laneX: (stepNumber: number) => number; // 0 = start bank rest position
   updateProgress: (stepsCompleted: number) => void;
+  /** Sinks (fades + destroys) one log in the given lane — the bear "fell through" it on a river death. No-op if the lane has no logs left. */
+  sinkLogAt: (stepNumber: number) => void;
   destroy: () => void;
 }
 
@@ -273,6 +277,8 @@ export function buildLaneField(difficulty: Difficulty, ticker: Ticker, laneDepth
     }
     prevZone = zone;
 
+    const logsInLane: Graphics[] = [];
+
     if (zone === "road") {
       laneContainer.addChild(buildRoadTexture(LANE_DEPTH));
 
@@ -308,6 +314,7 @@ export function buildLaneField(difficulty: Difficulty, ticker: Ticker, laneDepth
         log.y = -LANE_DEPTH / 2 + ((l + 0.5) / logCount) * LANE_DEPTH + (Math.random() - 0.5) * 30;
         laneContainer.addChild(log);
         ambientEntries.push({ view: log, speed: 0.02 + Math.random() * 0.018, axis: "x", bound: LANE_WIDTH / 2 + 60 });
+        logsInLane.push(log);
       }
 
       if (Math.random() < 0.35) {
@@ -333,7 +340,15 @@ export function buildLaneField(difficulty: Difficulty, ticker: Ticker, laneDepth
     laneContainer.addChild(badgeSlot);
 
     container.addChild(laneContainer);
-    lanes.push({ stepNumber, zone, container: laneContainer, label: badgeSlot, multiplier: table[i], resolved: false });
+    lanes.push({
+      stepNumber,
+      zone,
+      container: laneContainer,
+      label: badgeSlot,
+      multiplier: table[i],
+      resolved: false,
+      logs: logsInLane,
+    });
   }
 
   const farBankWidth = Math.max(LANE_WIDTH * 1.5, viewportWidth * 0.7);
@@ -377,12 +392,39 @@ export function buildLaneField(difficulty: Difficulty, ticker: Ticker, laneDepth
   }
   updateProgress(0);
 
+  function sinkLogAt(stepNumber: number): void {
+    const lane = lanes[stepNumber - 1];
+    if (!lane || lane.logs.length === 0) return;
+    // The log nearest the bear's vertical position (it always hops along y=0) —
+    // reads as "the one the bear actually fell through."
+    let target = lane.logs[0];
+    let bestDist = Math.abs(target.y);
+    for (const log of lane.logs) {
+      const d = Math.abs(log.y);
+      if (d < bestDist) {
+        target = log;
+        bestDist = d;
+      }
+    }
+    lane.logs = lane.logs.filter((log) => log !== target);
+    const ambientIdx = ambientEntries.findIndex((entry) => entry.view === target);
+    if (ambientIdx >= 0) ambientEntries.splice(ambientIdx, 1);
+
+    const startY = target.y;
+    void tween(ticker, 420, (t) => {
+      target.y = startY + t * 26;
+      target.alpha = 1 - t;
+      target.scale.set(1 - t * 0.5);
+    }).then(() => target.destroy());
+  }
+
   return {
     container,
     lanes,
     totalSteps: n,
     laneX: (stepNumber) => (stepNumber <= 0 ? -22 : (stepNumber - 0.5) * LANE_WIDTH),
     updateProgress,
+    sinkLogAt,
     destroy: () => {
       ticker.remove(onTick);
       container.destroy({ children: true });
