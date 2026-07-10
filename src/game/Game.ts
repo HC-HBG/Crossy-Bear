@@ -268,6 +268,10 @@ export class Game {
   private async animateDeath(snap: SessionSnapshot): Promise<void> {
     if (!this.laneField || !snap.lastOutcome) return;
     const outcome = snap.lastOutcome;
+    // The round is over — no lane is "next" anymore, so drop the highlight
+    // (gold ring, pulse, "Tap to hop" hint) rather than leaving it stuck on
+    // the fatal lane's badge through the death animation and beyond.
+    this.laneField.updateProgress(snap.stepsCompleted, false);
     const targetX = this.laneField.laneX(outcome.stepNumber);
     const dur = this.duration(HOP_MS, snap);
     await this.bear.hopTo(targetX, dur * 0.6);
