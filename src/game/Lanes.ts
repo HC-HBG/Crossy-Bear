@@ -15,7 +15,7 @@ export interface LaneView {
   label: Container; // whichever of {badge, tick} is currently visible — Game.ts edge-fades this
   multiplier: number;
   resolved: boolean;
-  logs: Graphics[]; // river lanes only; empty for road lanes
+  logs: Graphics[]; // river lanes only; decorative ambient logs, empty for road lanes
 }
 
 export interface LaneField {
@@ -24,7 +24,7 @@ export interface LaneField {
   totalSteps: number;
   laneX: (stepNumber: number) => number; // 0 = start bank rest position
   updateProgress: (stepsCompleted: number) => void;
-  /** Sinks (fades + destroys) one log in the given lane — the bear "fell through" it on a river death. No-op if the lane has no logs left. */
+  /** Sinks (fades + drops) the river badge — the "log" — at the given lane. The bear "fell through" it on a river death. No-op for road lanes or lanes already sunk. */
   sinkLogAt: (stepNumber: number) => void;
   destroy: () => void;
 }
@@ -372,6 +372,10 @@ export function buildLaneField(difficulty: Difficulty, ticker: Ticker, laneDepth
   ticker.add(onTick);
 
   const badgeCache = new Map<LaneView, { upcoming: Container; tick: Container }>();
+  // Lanes whose river badge has sunk (the bear died on that exact log) — the
+  // board persists across rounds, so this must survive updateProgress resets
+  // and permanently keep that one badge hidden without touching any other lane.
+  const sunkLanes = new Set<number>();
   function updateProgress(stepsCompleted: number): void {
     for (const lane of lanes) {
       let entry = badgeCache.get(lane);
@@ -388,9 +392,10 @@ export function buildLaneField(difficulty: Difficulty, ticker: Ticker, laneDepth
       lane.resolved = aheadBy <= 0;
       if (lane.zone === "river") {
         // The river badge IS the "log" the bear lands on — it must stay put
-        // once revealed. Only sinkLogAt (a river death) should ever remove it.
+        // once revealed. Only sinkLogAt (a river death on that exact lane)
+        // ever removes it.
         entry.tick.visible = false;
-        entry.upcoming.visible = aheadBy <= UPCOMING_WINDOW;
+        entry.upcoming.visible = !sunkLanes.has(lane.stepNumber) && aheadBy <= UPCOMING_WINDOW;
       } else {
         entry.tick.visible = lane.resolved;
         entry.upcoming.visible = !lane.resolved && aheadBy <= UPCOMING_WINDOW;
@@ -399,30 +404,22 @@ export function buildLaneField(difficulty: Difficulty, ticker: Ticker, laneDepth
   }
   updateProgress(0);
 
+  /** Sinks (fades + drops) the river badge the bear actually died on — that lane only, nothing else. */
   function sinkLogAt(stepNumber: number): void {
     const lane = lanes[stepNumber - 1];
-    if (!lane || lane.logs.length === 0) return;
-    // The log nearest the bear's vertical position (it always hops along y=0) —
-    // reads as "the one the bear actually fell through."
-    let target = lane.logs[0];
-    let bestDist = Math.abs(target.y);
-    for (const log of lane.logs) {
-      const d = Math.abs(log.y);
-      if (d < bestDist) {
-        target = log;
-        bestDist = d;
-      }
-    }
-    lane.logs = lane.logs.filter((log) => log !== target);
-    const ambientIdx = ambientEntries.findIndex((entry) => entry.view === target);
-    if (ambientIdx >= 0) ambientEntries.splice(ambientIdx, 1);
-
-    const startY = target.y;
+    if (!lane || lane.zone !== "river" || sunkLanes.has(stepNumber)) return;
+    sunkLanes.add(stepNumber);
+    const entry = badgeCache.get(lane);
+    if (!entry) return;
+    const badge = entry.upcoming;
+    const startY = badge.y;
     void tween(ticker, 420, (t) => {
-      target.y = startY + t * 26;
-      target.alpha = 1 - t;
-      target.scale.set(1 - t * 0.5);
-    }).then(() => target.destroy());
+      badge.y = startY + t * 26;
+      badge.alpha = 1 - t;
+      badge.scale.set(1 - t * 0.5);
+    }).then(() => {
+      badge.visible = false;
+    });
   }
 
   return {
