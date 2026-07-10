@@ -2,6 +2,7 @@ import { GameSession, MAX_BET, type SessionSnapshot } from "../state";
 import { DIFFICULTIES, MathEngine, type Difficulty } from "../engine/mathEngine";
 import { ToastHost } from "./toast";
 import { PaytablePanel, logPaytablesToConsole } from "./paytable";
+import { formatCurrency, formatMultiplier } from "../format";
 
 export interface HudCallbacks {
   onPrimaryInput: () => void;
@@ -283,8 +284,8 @@ export function buildHud(root: HTMLElement, session: GameSession, callbacks: Hud
   let lastPhaseForToast: SessionSnapshot["phase"] = "IDLE";
 
   session.subscribe((snap) => {
-    balanceEl.textContent = snap.balance.toFixed(2);
-    for (const el of bestWinEls) el.textContent = snap.bestWin.toFixed(2);
+    balanceEl.textContent = formatCurrency(snap.balance);
+    for (const el of bestWinEls) el.textContent = formatCurrency(snap.bestWin);
 
     const editable = snap.phase === "IDLE" || snap.phase === "DEAD" || snap.phase === "CASHED_OUT";
     const inRound = snap.phase === "STEP_WON" || snap.phase === "RESOLVING_STEP" || snap.phase === "ROUND_ACTIVE";
@@ -312,11 +313,11 @@ export function buildHud(root: HTMLElement, session: GameSession, callbacks: Hud
     cashOutBtn.disabled = !canCashOut;
     if (canCashOut && snap.lastOutcome) {
       const amount = snap.lastOutcome.amount;
-      cashOutBtn.textContent = `Cash Out ${amount.toFixed(2)}`;
+      cashOutBtn.textContent = `Cash Out ${formatCurrency(amount)}`;
       const weight = 1 + Math.min(0.55, Math.log10(Math.max(1, snap.lastOutcome.multiplier)) * 0.4);
       cashOutBtn.style.setProperty("--weight", String(weight));
       if (snap.lastOutcome.nextMultiplier !== null) {
-        nextMultiplierEl.textContent = `Next: ${snap.lastOutcome.multiplier.toFixed(2)}x → ${snap.lastOutcome.nextMultiplier.toFixed(2)}x`;
+        nextMultiplierEl.textContent = `Next: ${formatMultiplier(snap.lastOutcome.multiplier)} → ${formatMultiplier(snap.lastOutcome.nextMultiplier)}`;
       } else {
         nextMultiplierEl.textContent = "";
       }
@@ -325,7 +326,7 @@ export function buildHud(root: HTMLElement, session: GameSession, callbacks: Hud
       cashOutBtn.style.setProperty("--weight", "1");
       if (snap.phase === "ROUND_ACTIVE") {
         const firstMultiplier = MathEngine.tableFor(snap.difficulty)[0];
-        nextMultiplierEl.textContent = `Tap to hop — ${firstMultiplier.toFixed(2)}x on step 1`;
+        nextMultiplierEl.textContent = `Tap to hop — ${formatMultiplier(firstMultiplier)} on step 1`;
       } else if (snap.phase !== "STEP_WON") {
         nextMultiplierEl.textContent = "";
       }
@@ -347,13 +348,12 @@ export function buildHud(root: HTMLElement, session: GameSession, callbacks: Hud
     muteBtn.setAttribute("aria-pressed", String(snap.muted));
     muteBtn.querySelector(".toggle-state")!.textContent = snap.muted ? "Off" : "On";
 
-    // Subtle, non-modal prompts: once when the bear is parked at the kerb
-    // waiting for the first tap, and once when its current lane flips from
-    // road to river.
+    // Subtle, non-modal prompt when the current lane flips from road to
+    // river. The "tap to hop" hint itself lives only in #nextMultiplier
+    // (above Cash Out) — it must not be duplicated here as a second layer.
     const isFreshRound = lastPhaseForToast === "IDLE" || lastPhaseForToast === "DEAD" || lastPhaseForToast === "CASHED_OUT";
     if (snap.phase === "ROUND_ACTIVE" && isFreshRound) {
       lastZoneShown = null;
-      toasts.show("Bear's at the kerb — tap to cross.");
     }
     if (snap.phase === "STEP_WON" && snap.lastOutcome) {
       const zone = snap.lastOutcome.zone;

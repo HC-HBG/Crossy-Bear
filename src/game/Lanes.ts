@@ -2,6 +2,7 @@ import { Container, Graphics, Text, TextStyle, Ticker } from "pixi.js";
 import { COLORS, LANE_WIDTH } from "./constants";
 import { DIFFICULTIES, buildMultiplierTable, zoneForStep, type Difficulty, type Zone } from "../engine/mathEngine";
 import { buildVehicle, randomVehicleKind } from "./Vehicles";
+import { formatMultiplier } from "../format";
 
 export interface LaneView {
   stepNumber: number; // 1-based
@@ -137,7 +138,7 @@ export function buildLaneField(difficulty: Difficulty, ticker: Ticker, laneDepth
       }
     }
 
-    const label = new Text({ text: `${table[i].toFixed(2)}x`, style: labelStyle });
+    const label = new Text({ text: formatMultiplier(table[i]), style: labelStyle });
     label.anchor.set(0.5);
     label.y = -LANE_DEPTH / 2 + 34;
     laneContainer.addChild(label);

@@ -16,6 +16,7 @@ export class Game {
   readonly app: Application;
   private session: GameSession;
   private world: Container;
+  private boardMask: Graphics;
   private laneField: LaneField | null = null;
   private bear: Bear;
   private cameraX = 0;
@@ -29,6 +30,12 @@ export class Game {
     this.session = session;
     this.world = new Container();
     app.stage.addChild(this.world);
+    // Fixed in screen space (not a child of `world`) so it clips panned
+    // content to the board's visible rectangle regardless of camera x —
+    // vehicles/props can freely spawn/animate beyond its edges off-screen.
+    this.boardMask = new Graphics();
+    app.stage.addChild(this.boardMask);
+    this.world.mask = this.boardMask;
     this.bear = new Bear(app.ticker, bearTextures);
     this.world.addChild(this.bear.view);
     app.ticker.add(this.onTick);
@@ -76,23 +83,53 @@ export class Game {
     this.cameraX += (desiredCameraX - this.cameraX) * lerp;
     this.world.x = this.cameraX;
     this.world.y = this.worldY();
+    this.updateBoardMask();
     this.cullOffscreenLanes();
   };
+
+  /** Clips `world` (lanes, vehicles, bear, ripples) to the board's fixed screen-space rectangle. */
+  private updateBoardMask(): void {
+    const depth = this.laneDepth();
+    const top = this.worldY() - depth / 2;
+    this.boardMask.clear();
+    this.boardMask.rect(0, top, this.app.screen.width, depth).fill(0xffffff);
+  }
 
   /**
    * Ladders now run up to 40 lanes long. Only the handful near the camera
    * are ever visible, so skip rendering (and its draw calls) for the rest
    * — cheap to check, and keeps frame cost proportional to what's on
    * screen instead of the whole board.
+   *
+   * Lane labels get a finer per-frame treatment on top of that coarse cull:
+   * a label whose screen-space bounds aren't fully inside the viewport
+   * fades out toward its overlapping edge, so the furthest visible lane's
+   * label eases in as it scrolls into view instead of rendering a
+   * mid-glyph clip at the screen edge.
    */
   private cullOffscreenLanes(): void {
     if (!this.laneField) return;
     const margin = LANE_WIDTH * 2;
     const viewLeft = -this.world.x - margin;
     const viewRight = -this.world.x + this.app.screen.width + margin;
+    const FADE_ZONE = 60;
     for (const lane of this.laneField.lanes) {
       const x = lane.container.x;
-      lane.container.renderable = x + LANE_WIDTH / 2 >= viewLeft && x - LANE_WIDTH / 2 <= viewRight;
+      const renderable = x + LANE_WIDTH / 2 >= viewLeft && x - LANE_WIDTH / 2 <= viewRight;
+      lane.container.renderable = renderable;
+      if (!renderable) continue;
+
+      const screenX = x + this.world.x;
+      const halfWidth = lane.label.width / 2;
+      const left = screenX - halfWidth;
+      const right = screenX + halfWidth;
+      let alpha = 1;
+      if (right > this.app.screen.width) {
+        alpha = Math.max(0, 1 - (right - this.app.screen.width) / FADE_ZONE);
+      } else if (left < 0) {
+        alpha = Math.max(0, 1 - -left / FADE_ZONE);
+      }
+      lane.label.alpha = alpha;
     }
   }
 

@@ -240,7 +240,7 @@ button {
 
 #toast-host {
   position: absolute;
-  top: 62px;
+  top: 72px;
   left: 50%;
   transform: translateX(-50%);
   display: flex;

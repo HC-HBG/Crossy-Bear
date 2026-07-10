@@ -1,4 +1,5 @@
 import { DIFFICULTIES, MathEngine, zoneForStep, type Difficulty } from "../engine/mathEngine";
+import { formatMultiplier } from "../format";
 
 /** Prints every difficulty's multiplier ladder to the console for quick verification. */
 export function logPaytablesToConsole(): void {
@@ -86,7 +87,7 @@ export class PaytablePanel {
     this.tableBody.innerHTML = table
       .map((multiplier, i) => {
         const zone = zoneForStep(def, i);
-        return `<div class="paytable-row ${zone}"><span>${i + 1}</span><span>${zone}</span><span>${multiplier.toFixed(2)}x</span></div>`;
+        return `<div class="paytable-row ${zone}"><span>${i + 1}</span><span>${zone}</span><span>${formatMultiplier(multiplier)}</span></div>`;
       })
       .join("");
   }
