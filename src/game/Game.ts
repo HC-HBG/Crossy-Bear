@@ -250,7 +250,6 @@ export class Game {
     const laneField = this.laneField;
     if (!laneField) return;
     laneField.updateProgress(0, true);
-    laneField.setBearLane(0); // kerb — no lane there, so this just clears any stale freeze
     this.bear.reset(laneField.laneX(0));
     this.cameraX = -(this.bear.view.x - this.app.screen.width * CAMERA_ANCHOR);
     this.world.x = this.cameraX;
@@ -262,11 +261,6 @@ export class Game {
     if (!this.laneField) return;
     const stepNumber = snap.stepsCompleted;
     const targetX = this.laneField.laneX(stepNumber);
-    // Freeze the destination lane's traffic as the hop begins (this also
-    // unfreezes wherever the bear just left, since only one lane is ever
-    // frozen at a time) — no car can clip the bear mid-hop or while it's
-    // standing there deciding on the next move.
-    this.laneField.setBearLane(stepNumber);
     await this.bear.hopTo(targetX, this.duration(HOP_MS, snap));
     this.laneField.updateProgress(stepNumber, true);
   }

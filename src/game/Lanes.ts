@@ -28,8 +28,6 @@ export interface LaneField {
   updateProgress: (stepsCompleted: number, active?: boolean) => void;
   /** Sinks (fades + drops) the river badge — the "log" — at the given lane. The bear "fell through" it on a river death. Restored on the next round's updateProgress(0). No-op for road lanes or lanes already sunk. */
   sinkLogAt: (stepNumber: number) => void;
-  /** Freezes that lane's vehicles (only) until the next call — the lane the bear currently stands in. Pass null to unfreeze everything. */
-  setBearLane: (stepNumber: number | null) => void;
   destroy: () => void;
 }
 
@@ -38,8 +36,6 @@ interface Ambient {
   speed: number;
   axis: "y" | "x";
   bound: number;
-  stepNumber: number;
-  freezable: boolean; // only vehicles freeze while the bear occupies their lane; decor keeps drifting
 }
 
 const badgeTextStyle = new TextStyle({
@@ -366,7 +362,7 @@ export function buildLaneField(
         vehicle.rotation = Math.PI / 2; // always facing down
         vehicle.y = -bound + v * period;
         laneContainer.addChild(vehicle);
-        ambientEntries.push({ view: vehicle, speed, axis: "y", bound, stepNumber, freezable: true });
+        ambientEntries.push({ view: vehicle, speed, axis: "y", bound });
       }
     } else {
       laneContainer.addChild(buildRiverTexture(LANE_DEPTH));
@@ -377,7 +373,7 @@ export function buildLaneField(
         sparkle.x = -LANE_WIDTH / 2 + Math.random() * LANE_WIDTH;
         sparkle.y = -LANE_DEPTH / 2 + Math.random() * LANE_DEPTH;
         laneContainer.addChild(sparkle);
-        ambientEntries.push({ view: sparkle, speed: 0.01 + Math.random() * 0.015, axis: "y", bound: LANE_DEPTH / 2 + 10, stepNumber, freezable: false });
+        ambientEntries.push({ view: sparkle, speed: 0.01 + Math.random() * 0.015, axis: "y", bound: LANE_DEPTH / 2 + 10 });
       }
 
       // At least 2 logs visible per river lane at all times.
@@ -387,7 +383,7 @@ export function buildLaneField(
         log.x = -LANE_WIDTH / 2 + (l / logCount) * LANE_WIDTH + Math.random() * 20;
         log.y = -LANE_DEPTH / 2 + ((l + 0.5) / logCount) * LANE_DEPTH + (Math.random() - 0.5) * 30;
         laneContainer.addChild(log);
-        ambientEntries.push({ view: log, speed: 0.02 + Math.random() * 0.018, axis: "x", bound: LANE_WIDTH / 2 + 60, stepNumber, freezable: false });
+        ambientEntries.push({ view: log, speed: 0.02 + Math.random() * 0.018, axis: "x", bound: LANE_WIDTH / 2 + 60 });
         logsInLane.push(log);
       }
 
@@ -396,7 +392,7 @@ export function buildLaneField(
         pad.x = -LANE_WIDTH / 2 + 20 + Math.random() * (LANE_WIDTH - 40);
         pad.y = -LANE_DEPTH / 2 + Math.random() * LANE_DEPTH;
         laneContainer.addChild(pad);
-        ambientEntries.push({ view: pad, speed: 0.012 + Math.random() * 0.01, axis: "y", bound: LANE_DEPTH / 2 + 20, stepNumber, freezable: false });
+        ambientEntries.push({ view: pad, speed: 0.012 + Math.random() * 0.01, axis: "y", bound: LANE_DEPTH / 2 + 20 });
       }
       if (Math.random() < 0.25) {
         const stone = buildStone();
@@ -438,16 +434,10 @@ export function buildLaneField(
   let activeBadge: Container | null = null;
   let hoveredBadge: Container | null = null;
   let pulseTime = 0;
-  // The lane the bear currently occupies — its vehicles hold still until
-  // the bear hops away, so it never gets run over while just standing
-  // there deciding to hop again or cash out. Decor (logs, sparkles, lily
-  // pads) keeps drifting regardless.
-  let frozenStepNumber: number | null = null;
 
   const onTick = (): void => {
     const dt = ticker.deltaMS;
     for (const entry of ambientEntries) {
-      if (entry.freezable && entry.stepNumber === frozenStepNumber) continue;
       if (entry.axis === "y") {
         entry.view.y += entry.speed * dt;
         if (entry.view.y > entry.bound) entry.view.y = -entry.bound;
@@ -587,9 +577,6 @@ export function buildLaneField(
     laneX: (stepNumber) => (stepNumber <= 0 ? -22 : laneCenterX(stepNumber)),
     updateProgress,
     sinkLogAt,
-    setBearLane: (stepNumber) => {
-      frozenStepNumber = stepNumber;
-    },
     destroy: () => {
       ticker.remove(onTick);
       container.destroy({ children: true });
