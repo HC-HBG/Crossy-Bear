@@ -37,8 +37,9 @@ const RAW_DIMS: Record<VehicleKind, Dims> = {
 };
 
 // Target on-screen body width (perpendicular to travel) once scaled —
-// roughly 65% of the lane's width, per the mock's chunkier vehicles.
-const TARGET_BODY_WIDTH = LANE_WIDTH * 0.65;
+// chunkier than the original unscaled art, but well short of the lane's
+// full width so cars read as sized objects, not dominant blocks.
+const TARGET_BODY_WIDTH = LANE_WIDTH * 0.38;
 
 /** Uniform scale factor that brings this kind's body width to TARGET_BODY_WIDTH. */
 export function vehicleScale(kind: VehicleKind): number {
