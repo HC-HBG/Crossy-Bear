@@ -6,17 +6,21 @@ the core loop feels great: **tap → resolve → decide (cash out or continue) �
 restart.** There is no real-money wagering, no backend, and no account system.
 
 Built with PixiJS v8 + TypeScript + Vite. The bear is four pixel-art PNG
-sprites (`src/assets/bear/`, ~170KB total, trimmed and downscaled from
-supplied source art); everything else on screen — vehicles, road, river,
-lanes, coin fountain — is still code-generated Pixi `Graphics`, no image
-files. All audio is synthesised with WebAudio — no audio files.
+sprites (`src/assets/bear/`, trimmed and downscaled from supplied source
+art), plus a second Daredevil-themed set (`src/assets/bear/daredevil/`)
+swapped in automatically whenever Daredevil is the selected difficulty —
+both sets are calibrated to the same ear-span-in-final-texture target so
+the bear reads as the same on-screen size across skins. Everything else on
+screen — vehicles, road, river, lanes, coin fountain — is still
+code-generated Pixi `Graphics`, no image files. All audio is synthesised
+with WebAudio — no audio files.
 
 The HUD (the DOM/CSS chrome above and below the Pixi canvas — top bar,
 bet/difficulty/action bar, menu drawer, paytable) is plain HTML/CSS built by
 `src/ui/hud.ts`, styled against a small dark/gold/purple palette with the
 "Press Start 2P" pixel display font (Google Fonts, `monospace` fallback) for
-logos, numbers, and buttons. The coin icon is an inline SVG `<symbol>`, no
-image file.
+logos, numbers, and buttons. The top-bar logo is a PNG (`src/assets/logo.png`).
+The coin icon is an inline SVG `<symbol>`, no image file.
 
 ## Running it
 

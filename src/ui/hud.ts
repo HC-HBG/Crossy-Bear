@@ -3,6 +3,7 @@ import { DIFFICULTIES, MathEngine, type Difficulty } from "../engine/mathEngine"
 import { ToastHost } from "./toast";
 import { PaytablePanel, logPaytablesToConsole } from "./paytable";
 import { formatCurrency, formatMultiplier } from "../format";
+import logoUrl from "../assets/logo.png";
 
 export interface HudCallbacks {
   onPrimaryInput: () => void;
@@ -36,9 +37,8 @@ export function buildHud(root: HTMLElement, session: GameSession, callbacks: Hud
     <div id="canvas-host"></div>
     <div id="hud">
       <header id="hud-top">
-        <div id="logo" aria-label="Crossy Bear">
-          <span class="logo-line logo-crossy">Crossy</span>
-          <span class="logo-line logo-bear">Bear</span>
+        <div id="logo">
+          <img src="${logoUrl}" alt="Crossy Bear" />
         </div>
 
         <div id="best-win-stat" class="stat-block">

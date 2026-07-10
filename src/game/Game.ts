@@ -24,6 +24,7 @@ export class Game {
   private bear: Bear;
   private cameraX = 0;
   private lastPhase: Phase = "IDLE";
+  private lastDifficulty: SessionSnapshot["difficulty"] | null = null;
   private lastStepsCompleted = 0;
   private animQueue: Promise<void> = Promise.resolve();
   private hitVehicleSeed = 0;
@@ -160,6 +161,11 @@ export class Game {
   }
 
   private handleSnapshot(snap: SessionSnapshot): void {
+    if (snap.difficulty !== this.lastDifficulty) {
+      this.lastDifficulty = snap.difficulty;
+      this.bear.setSkin(snap.difficulty === "daredevil" ? "daredevil" : "default");
+    }
+
     const isNewRound =
       snap.phase === "ROUND_ACTIVE" &&
       (this.lastPhase === "IDLE" || this.lastPhase === "DEAD" || this.lastPhase === "CASHED_OUT");

@@ -5,34 +5,55 @@ import idleUrl from "../assets/bear/idle.png";
 import hopUrl from "../assets/bear/hop.png";
 import flatUrl from "../assets/bear/flat.png";
 import celebrateUrl from "../assets/bear/celebrate.png";
+import ddIdleUrl from "../assets/bear/daredevil/idle.png";
+import ddHopUrl from "../assets/bear/daredevil/hop.png";
+import ddFlatUrl from "../assets/bear/daredevil/flat.png";
+import ddCelebrateUrl from "../assets/bear/daredevil/celebrate.png";
 
 type Pose = "idle" | "hop" | "flat" | "celebrate";
+export type Skin = "default" | "daredevil";
 
-const POSE_URLS: Record<Pose, string> = {
-  idle: idleUrl,
-  hop: hopUrl,
-  flat: flatUrl,
-  celebrate: celebrateUrl,
+const POSE_URLS: Record<Skin, Record<Pose, string>> = {
+  default: {
+    idle: idleUrl,
+    hop: hopUrl,
+    flat: flatUrl,
+    celebrate: celebrateUrl,
+  },
+  daredevil: {
+    idle: ddIdleUrl,
+    hop: ddHopUrl,
+    flat: ddFlatUrl,
+    celebrate: ddCelebrateUrl,
+  },
 };
 
 // idle/hop are natively 320px tall; this scale gives the bear a consistent
-// ~92px on-screen height across all four sprite poses (they share pixel
-// density since they came from the same generation batch).
+// ~92px on-screen height across all four sprite poses. The daredevil skin
+// is a separate art batch, calibrated (see the asset-processing history)
+// to the same ear-span-in-final-texture target as the default skin's
+// idle.png, so this one constant applies uniformly to both skins.
 const SPRITE_SCALE = 92 / 320;
 
 type PoseTextures = Record<Pose, Texture>;
+type SkinTextures = Record<Skin, PoseTextures>;
 
-let texturesPromise: Promise<PoseTextures> | null = null;
+let texturesPromise: Promise<SkinTextures> | null = null;
 
-/** Preloads and caches the bear's sprite textures. Call once before creating a Bear. */
-export function preloadBearTextures(): Promise<PoseTextures> {
+/** Preloads and caches both skins' sprite textures. Call once before creating a Bear. */
+export function preloadBearTextures(): Promise<SkinTextures> {
   texturesPromise ??= (async () => {
-    const pairs = await Promise.all(
-      (Object.entries(POSE_URLS) as [Pose, string][]).map(
-        async ([pose, url]) => [pose, await Assets.load<Texture>(url)] as const,
-      ),
+    const skinPairs = await Promise.all(
+      (Object.entries(POSE_URLS) as [Skin, Record<Pose, string>][]).map(async ([skin, urls]) => {
+        const posePairs = await Promise.all(
+          (Object.entries(urls) as [Pose, string][]).map(
+            async ([pose, url]) => [pose, await Assets.load<Texture>(url)] as const,
+          ),
+        );
+        return [skin, Object.fromEntries(posePairs) as PoseTextures] as const;
+      }),
     );
-    return Object.fromEntries(pairs) as PoseTextures;
+    return Object.fromEntries(skinPairs) as SkinTextures;
   })();
   return texturesPromise;
 }
@@ -40,16 +61,18 @@ export function preloadBearTextures(): Promise<PoseTextures> {
 export class Bear {
   readonly view: Container;
   private sprite: Sprite;
-  private textures: PoseTextures;
+  private skins: SkinTextures;
+  private skin: Skin = "default";
+  private currentPose: Pose = "idle";
   private ticker: Ticker;
   private idleTime = 0;
   private idleEnabled = true;
 
-  constructor(ticker: Ticker, textures: PoseTextures) {
+  constructor(ticker: Ticker, skins: SkinTextures) {
     this.ticker = ticker;
-    this.textures = textures;
+    this.skins = skins;
     this.view = new Container();
-    this.sprite = new Sprite(textures.idle);
+    this.sprite = new Sprite(skins.default.idle);
     this.sprite.anchor.set(0.5, 1);
     this.sprite.scale.set(SPRITE_SCALE);
     this.view.addChild(this.sprite);
@@ -69,7 +92,15 @@ export class Bear {
   };
 
   private setPose(pose: Pose): void {
-    this.sprite.texture = this.textures[pose];
+    this.currentPose = pose;
+    this.sprite.texture = this.skins[this.skin][pose];
+  }
+
+  /** Swaps the active sprite set (e.g. the Daredevil theme) without disturbing pose/animation state. */
+  setSkin(skin: Skin): void {
+    if (this.skin === skin) return;
+    this.skin = skin;
+    this.sprite.texture = this.skins[this.skin][this.currentPose];
   }
 
   reset(x: number): void {
