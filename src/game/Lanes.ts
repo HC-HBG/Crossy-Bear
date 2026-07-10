@@ -386,8 +386,15 @@ export function buildLaneField(difficulty: Difficulty, ticker: Ticker, laneDepth
       }
       const aheadBy = lane.stepNumber - stepsCompleted;
       lane.resolved = aheadBy <= 0;
-      entry.tick.visible = lane.resolved;
-      entry.upcoming.visible = !lane.resolved && aheadBy <= UPCOMING_WINDOW;
+      if (lane.zone === "river") {
+        // The river badge IS the "log" the bear lands on — it must stay put
+        // once revealed. Only sinkLogAt (a river death) should ever remove it.
+        entry.tick.visible = false;
+        entry.upcoming.visible = aheadBy <= UPCOMING_WINDOW;
+      } else {
+        entry.tick.visible = lane.resolved;
+        entry.upcoming.visible = !lane.resolved && aheadBy <= UPCOMING_WINDOW;
+      }
     }
   }
   updateProgress(0);
