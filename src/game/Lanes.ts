@@ -276,12 +276,15 @@ export function buildLaneField(difficulty: Difficulty, ticker: Ticker, laneDepth
     if (zone === "road") {
       laneContainer.addChild(buildRoadTexture(LANE_DEPTH));
 
+      // All traffic in a lane travels the same way, like a real lane —
+      // direction is chosen once per lane, not per vehicle.
+      const laneDirection = Math.random() < 0.5 ? 1 : -1;
       const count = 1 + (i % 2);
       for (let v = 0; v < count; v++) {
         const vehicle = buildVehicle(randomVehicleKind(vehicleSeed++));
-        vehicle.rotation = Math.PI / 2;
+        vehicle.rotation = laneDirection > 0 ? Math.PI / 2 : -Math.PI / 2;
         vehicle.y = -LANE_DEPTH / 2 + Math.random() * LANE_DEPTH;
-        const speed = (0.04 + Math.random() * 0.05) * (v % 2 === 0 ? 1 : -1);
+        const speed = (0.04 + Math.random() * 0.05) * laneDirection;
         laneContainer.addChild(vehicle);
         ambientEntries.push({ view: vehicle, speed, axis: "y", bound: LANE_DEPTH / 2 + 40 });
       }
